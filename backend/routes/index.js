@@ -13,7 +13,7 @@ const installRouter = require('./install.routes');
 // // Import the service routes 
 // const serviceRoutes = require("./service.routes");
 // // Add the install router to the middleware chain
-// router.use(installRouter);
+router.use(installRouter);
 // // Add the employee routes to the main router 
 // router.use(employeeRouter);
 // // Add the customer routes to the main router 

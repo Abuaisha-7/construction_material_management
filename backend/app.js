@@ -19,6 +19,13 @@ app.use(express.json());
 app.use(sanitize.middleware);
 // Allow CORS to all
 app.use(cors(corsOptions));
+
+app.get("/", (req, res) => {
+  res.json({
+    message: "API is running successfully",
+  });
+});
+
 // Import the routes
 const routes = require('./routes');
 // Add the routes to the middleware chain

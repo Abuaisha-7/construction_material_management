@@ -1,0 +1,1146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ActivityStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+enum MaterialRequestPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum MaterialRequestStatus {
+  DRAFT
+  PENDING_APPROVAL
+  RETURNED
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  PARTIALLY_SUPPLIED
+  FULLY_SUPPLIED
+  COMPLETED
+  CANCELLED
+}
+
+enum ApprovalAction {
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CANCELLED
+  CLOSED
+}
+
+enum GrnStatus {
+  DRAFT
+  AWAITING_INSPECTION
+  PARTIALLY_ACCEPTED
+  ACCEPTED
+  REJECTED
+  POSTED
+  CANCELLED
+}
+
+enum InspectionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InspectionDecision {
+  ACCEPTED
+  CONDITIONALLY_ACCEPTED
+  PARTIALLY_ACCEPTED
+  REJECTED
+  QUARANTINED
+}
+
+enum InventoryTransactionType {
+  OPENING_BALANCE
+  RECEIPT
+  ISSUE
+  RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE
+  LOSS
+  DISPOSAL
+  REVERSAL
+}
+
+enum MaterialIssueStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PARTIALLY_ISSUED
+  ISSUED
+  CANCELLED
+}
+
+enum MaterialReturnStatus {
+  PENDING
+  INSPECTED
+  ACCEPTED
+  PARTIALLY_ACCEPTED
+  REJECTED
+  POSTED
+}
+
+enum MaterialConditionStatus {
+  GOOD
+  DAMAGED
+  UNUSABLE
+  UNKNOWN
+}
+
+enum StockCountStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  APPROVED
+}
+
+enum StockAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  POSTED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  APPROVAL
+  INVENTORY
+  MATERIAL
+  PROCUREMENT
+  INSPECTION
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// ============================================================
+// USER MANAGEMENT
+// ============================================================
+
+model User {
+  id           String     @id @default(uuid()) @db.Char(36)
+  fullName     String     @map("full_name") @db.VarChar(255)
+  email        String     @unique @db.VarChar(255)
+  phone        String?    @db.VarChar(50)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  roles                     UserRole[]
+  managedProjects           Project[]                 @relation("ProjectManager")
+  requestedMaterialRequests MaterialRequest[]         @relation("RequestedBy")
+  requestApprovals          MaterialRequestApproval[]
+  createdPurchaseOrders     PurchaseOrder[]           @relation("PurchaseOrderCreatedBy")
+  receivedGrns              GoodsReceivedNote[]       @relation("GrnReceivedBy")
+  inspections               MaterialInspection[]      @relation("Inspector")
+  materialIssuesRequested   MaterialIssue[]           @relation("IssueRequestedBy")
+  materialIssuesApproved    MaterialIssue[]           @relation("IssueApprovedBy")
+  materialIssuesReceived    MaterialIssue[]           @relation("IssueReceiver")
+  materialReturnsReturned   MaterialReturn[]          @relation("ReturnReturnedBy")
+  materialReturnsReceived   MaterialReturn[]          @relation("ReturnReceivedBy")
+  stockCountsPerformed      StockCount[]              @relation("StockCountedBy")
+  stockCountsVerified       StockCount[]              @relation("StockVerifiedBy")
+  stockAdjustmentsRequested StockAdjustment[]         @relation("AdjustmentRequestedBy")
+  stockAdjustmentsApproved  StockAdjustment[]         @relation("AdjustmentApprovedBy")
+  inventoryTransactions     InventoryTransaction[]
+  wastageReported           MaterialWastage[]         @relation("WastageReportedBy")
+  wastageApproved           MaterialWastage[]         @relation("WastageApprovedBy")
+  uploadedDocuments         Document[]
+  notifications             Notification[]
+  auditLogs                 AuditLog[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Char(36)
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Char(36)
+  name        String   @unique @db.VarChar(150)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Char(36)
+  roleId String @map("role_id") @db.Char(36)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Char(36)
+  permissionId String @map("permission_id") @db.Char(36)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================
+// PROJECT MANAGEMENT
+// ============================================================
+
+model Project {
+  id               String        @id @default(uuid()) @db.Char(36)
+  projectCode      String        @unique @map("project_code") @db.VarChar(50)
+  name             String        @db.VarChar(255)
+  location         String?       @db.VarChar(255)
+  clientName       String?       @map("client_name") @db.VarChar(255)
+  contractorName   String?       @map("contractor_name") @db.VarChar(255)
+  consultantName   String?       @map("consultant_name") @db.VarChar(255)
+  projectManagerId String?       @map("project_manager_id") @db.Char(36)
+  startDate        DateTime?     @map("start_date") @db.Date
+  completionDate   DateTime?     @map("completion_date") @db.Date
+  contractValue    Decimal?      @map("contract_value") @db.Decimal(18, 2)
+  currency         String        @default("ETB") @db.VarChar(10)
+  status           ProjectStatus @default(ACTIVE)
+  description      String?       @db.Text
+  imageUrl         String?       @map("image_url") @db.Text
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  projectManager        User?                  @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: SetNull)
+  buildings             Building[]
+  zones                 Zone[]
+  activities            Activity[]
+  materialRequests      MaterialRequest[]
+  purchaseOrders        PurchaseOrder[]
+  goodsReceivedNotes    GoodsReceivedNote[]
+  inventoryBalances     InventoryBalance[]
+  inventoryTransactions InventoryTransaction[]
+  materialIssues        MaterialIssue[]
+  materialReturns       MaterialReturn[]
+  stockCounts           StockCount[]
+  stockAdjustments      StockAdjustment[]
+  materialConsumption   MaterialConsumption[]
+  materialWastage       MaterialWastage[]
+  documents             Document[]
+  Warehouse             Warehouse[]
+
+  @@index([projectManagerId])
+  @@index([status])
+  @@map("projects")
+}
+
+model Building {
+  id          String   @id @default(uuid()) @db.Char(36)
+  projectId   String   @map("project_id") @db.Char(36)
+  code        String   @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  project          Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  zones            Zone[]
+  activities       Activity[]
+  materialRequests MaterialRequest[]
+  materialIssues   MaterialIssue[]
+  consumption      MaterialConsumption[]
+  wastage          MaterialWastage[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@map("buildings")
+}
+
+model Zone {
+  id          String   @id @default(uuid()) @db.Char(36)
+  projectId   String   @map("project_id") @db.Char(36)
+  buildingId  String?  @map("building_id") @db.Char(36)
+  code        String?  @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  project          Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  building         Building?             @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  activities       Activity[]
+  materialRequests MaterialRequest[]
+  materialIssues   MaterialIssue[]
+  consumption      MaterialConsumption[]
+
+  @@index([projectId])
+  @@index([buildingId])
+  @@map("zones")
+}
+
+model Activity {
+  id          String         @id @default(uuid()) @db.Char(36)
+  projectId   String         @map("project_id") @db.Char(36)
+  buildingId  String?        @map("building_id") @db.Char(36)
+  zoneId      String?        @map("zone_id") @db.Char(36)
+  code        String?        @db.VarChar(50)
+  name        String         @db.VarChar(255)
+  description String?        @db.Text
+  status      ActivityStatus @default(NOT_STARTED)
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  project          Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  building         Building?             @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  zone             Zone?                 @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  materialRequests MaterialRequest[]
+  materialIssues   MaterialIssue[]
+  consumption      MaterialConsumption[]
+  wastage          MaterialWastage[]
+
+  @@index([projectId])
+  @@index([buildingId])
+  @@index([zoneId])
+  @@map("activities")
+}
+
+// ============================================================
+// MATERIAL MASTER
+// ============================================================
+
+model MaterialCategory {
+  id          String   @id @default(uuid()) @db.Char(36)
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  materials Material[]
+
+  @@map("material_categories")
+}
+
+model Unit {
+  id        String   @id @default(uuid()) @db.Char(36)
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  symbol    String   @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  materials Material[]
+  grnItems  GrnItem[]
+
+  @@map("units")
+}
+
+model Material {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  materialCode        String   @unique @map("material_code") @db.VarChar(50)
+  name                String   @db.VarChar(255)
+  categoryId          String   @map("category_id") @db.Char(36)
+  unitId              String   @map("unit_id") @db.Char(36)
+  specification       String?  @db.Text
+  standard            String?  @db.VarChar(100)
+  description         String?  @db.Text
+  estimatedUnitPrice  Decimal  @default(0) @map("estimated_unit_price") @db.Decimal(18, 2)
+  currentUnitPrice    Decimal  @default(0) @map("current_unit_price") @db.Decimal(18, 2)
+  minimumStock        Decimal  @default(0) @map("minimum_stock") @db.Decimal(18, 3)
+  reorderLevel        Decimal  @default(0) @map("reorder_level") @db.Decimal(18, 3)
+  maximumStock        Decimal? @map("maximum_stock") @db.Decimal(18, 3)
+  requiresInspection  Boolean  @default(true) @map("requires_inspection")
+  requiresCertificate Boolean  @default(false) @map("requires_certificate")
+  storageRequirements String?  @map("storage_requirements") @db.Text
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  category              MaterialCategory       @relation(fields: [categoryId], references: [id])
+  unit                  Unit                   @relation(fields: [unitId], references: [id])
+  suppliers             MaterialSupplier[]
+  requestItems          MaterialRequestItem[]
+  purchaseOrderItems    PurchaseOrderItem[]
+  grnItems              GrnItem[]
+  inspectionItems       InspectionItem[]
+  inventoryBalances     InventoryBalance[]
+  inventoryTransactions InventoryTransaction[]
+  issueItems            MaterialIssueItem[]
+  returnItems           MaterialReturnItem[]
+  stockCountItems       StockCountItem[]
+  consumption           MaterialConsumption[]
+  wastage               MaterialWastage[]
+
+  @@index([categoryId])
+  @@index([unitId])
+  @@index([isActive])
+  @@map("materials")
+}
+
+// ============================================================
+// SUPPLIERS
+// ============================================================
+
+model Supplier {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  supplierCode       String   @unique @map("supplier_code") @db.VarChar(50)
+  companyName        String   @map("company_name") @db.VarChar(255)
+  contactPerson      String?  @map("contact_person") @db.VarChar(255)
+  phone              String?  @db.VarChar(50)
+  email              String?  @db.VarChar(255)
+  address            String?  @db.Text
+  registrationNumber String?  @map("registration_number") @db.VarChar(100)
+  taxNumber          String?  @map("tax_number") @db.VarChar(100)
+  licenseNumber      String?  @map("license_number") @db.VarChar(100)
+  rating             Decimal? @db.Decimal(3, 2)
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  materials      MaterialSupplier[]
+  purchaseOrders PurchaseOrder[]
+  goodsReceived  GoodsReceivedNote[]
+
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+model MaterialSupplier {
+  materialId        String   @map("material_id") @db.Char(36)
+  supplierId        String   @map("supplier_id") @db.Char(36)
+  preferred         Boolean  @default(false)
+  supplierUnitPrice Decimal? @map("supplier_unit_price") @db.Decimal(18, 2)
+  leadTimeDays      Int?     @map("lead_time_days")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@id([materialId, supplierId])
+  @@index([supplierId])
+  @@map("material_suppliers")
+}
+
+// ============================================================
+// WAREHOUSES
+// ============================================================
+
+model Warehouse {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  projectId           String   @map("project_id") @db.Char(36)
+  code                String   @db.VarChar(50)
+  name                String   @db.VarChar(255)
+  type                String?  @db.VarChar(50)
+  responsibleUserId   String?  @map("responsible_user_id") @db.Char(36)
+  capacityDescription String?  @map("capacity_description") @db.Text
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  project               Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  storageLocations      StorageLocation[]
+  inventoryBalances     InventoryBalance[]
+  inventoryTransactions InventoryTransaction[]
+  materialIssues        MaterialIssue[]
+  stockCounts           StockCount[]
+  stockAdjustments      StockAdjustment[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@map("warehouses")
+}
+
+model StorageLocation {
+  id           String   @id @default(uuid()) @db.Char(36)
+  warehouseId  String   @map("warehouse_id") @db.Char(36)
+  code         String   @db.VarChar(50)
+  name         String   @db.VarChar(255)
+  locationType String?  @map("location_type") @db.VarChar(50)
+  capacity     Decimal? @db.Decimal(18, 3)
+  description  String?  @db.Text
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  warehouse             Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  inventoryBalances     InventoryBalance[]
+  inventoryTransactions InventoryTransaction[]
+  grnItems              GrnItem[]
+  issueItems            MaterialIssueItem[]
+  stockCountItems       StockCountItem[]
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+  @@map("storage_locations")
+}
+
+// ============================================================
+// MATERIAL REQUESTS
+// ============================================================
+
+model MaterialRequest {
+  id            String                  @id @default(uuid()) @db.Char(36)
+  requestNumber String                  @unique @map("request_number") @db.VarChar(50)
+  projectId     String                  @map("project_id") @db.Char(36)
+  requestedBy   String                  @map("requested_by") @db.Char(36)
+  buildingId    String?                 @map("building_id") @db.Char(36)
+  zoneId        String?                 @map("zone_id") @db.Char(36)
+  activityId    String?                 @map("activity_id") @db.Char(36)
+  requestDate   DateTime                @map("request_date") @db.Date
+  requiredDate  DateTime?               @map("required_date") @db.Date
+  priority      MaterialRequestPriority @default(NORMAL)
+  purpose       String?                 @db.Text
+  status        MaterialRequestStatus   @default(DRAFT)
+  remarks       String?                 @db.Text
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  project   Project                   @relation(fields: [projectId], references: [id])
+  requester User                      @relation("RequestedBy", fields: [requestedBy], references: [id])
+  building  Building?                 @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  zone      Zone?                     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  activity  Activity?                 @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  items     MaterialRequestItem[]
+  approvals MaterialRequestApproval[]
+
+  @@index([projectId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([requestDate])
+  @@map("material_requests")
+}
+
+model MaterialRequestItem {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  requestId          String   @map("request_id") @db.Char(36)
+  materialId         String   @map("material_id") @db.Char(36)
+  requestedQuantity  Decimal  @map("requested_quantity") @db.Decimal(18, 3)
+  approvedQuantity   Decimal  @default(0) @map("approved_quantity") @db.Decimal(18, 3)
+  suppliedQuantity   Decimal  @default(0) @map("supplied_quantity") @db.Decimal(18, 3)
+  issuedQuantity     Decimal  @default(0) @map("issued_quantity") @db.Decimal(18, 3)
+  estimatedUnitPrice Decimal? @map("estimated_unit_price") @db.Decimal(18, 2)
+  remarks            String?  @db.Text
+
+  request  MaterialRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  material Material        @relation(fields: [materialId], references: [id])
+
+  @@index([requestId])
+  @@index([materialId])
+  @@map("material_request_items")
+}
+
+model MaterialRequestApproval {
+  id               String         @id @default(uuid()) @db.Char(36)
+  requestId        String         @map("request_id") @db.Char(36)
+  approverId       String         @map("approver_id") @db.Char(36)
+  action           ApprovalAction
+  approvedQuantity Decimal?       @map("approved_quantity") @db.Decimal(18, 3)
+  comments         String?        @db.Text
+  actionDate       DateTime       @default(now()) @map("action_date")
+
+  request  MaterialRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approver User            @relation(fields: [approverId], references: [id])
+
+  @@index([requestId])
+  @@index([approverId])
+  @@map("material_request_approvals")
+}
+
+// ============================================================
+// PURCHASE ORDERS
+// ============================================================
+
+model PurchaseOrder {
+  id                   String              @id @default(uuid()) @db.Char(36)
+  projectId            String              @map("project_id") @db.Char(36)
+  supplierId           String              @map("supplier_id") @db.Char(36)
+  purchaseOrderNumber  String              @unique @map("purchase_order_number") @db.VarChar(50)
+  orderDate            DateTime            @map("order_date") @db.Date
+  expectedDeliveryDate DateTime?           @map("expected_delivery_date") @db.Date
+  status               PurchaseOrderStatus @default(DRAFT)
+  subtotal             Decimal             @default(0) @db.Decimal(18, 2)
+  taxAmount            Decimal             @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount          Decimal             @default(0) @map("total_amount") @db.Decimal(18, 2)
+  currency             String              @default("ETB") @db.VarChar(10)
+  remarks              String?             @db.Text
+  createdBy            String?             @map("created_by") @db.Char(36)
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  project       Project             @relation(fields: [projectId], references: [id])
+  supplier      Supplier            @relation(fields: [supplierId], references: [id])
+  creator       User?               @relation("PurchaseOrderCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  items         PurchaseOrderItem[]
+  goodsReceived GoodsReceivedNote[]
+
+  @@index([projectId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String  @id @default(uuid()) @db.Char(36)
+  purchaseOrderId  String  @map("purchase_order_id") @db.Char(36)
+  materialId       String  @map("material_id") @db.Char(36)
+  orderedQuantity  Decimal @map("ordered_quantity") @db.Decimal(18, 3)
+  unitPrice        Decimal @map("unit_price") @db.Decimal(18, 2)
+  receivedQuantity Decimal @default(0) @map("received_quantity") @db.Decimal(18, 3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  material      Material      @relation(fields: [materialId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([materialId])
+  @@map("purchase_order_items")
+}
+
+// ============================================================
+// GOODS RECEIVED NOTES
+// ============================================================
+
+model GoodsReceivedNote {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  grnNumber          String    @unique @map("grn_number") @db.VarChar(50)
+  projectId          String    @map("project_id") @db.Char(36)
+  supplierId         String    @map("supplier_id") @db.Char(36)
+  purchaseOrderId    String?   @map("purchase_order_id") @db.Char(36)
+  deliveryDate       DateTime  @map("delivery_date") @db.Date
+  deliveryNoteNumber String?   @map("delivery_note_number") @db.VarChar(100)
+  vehicleNumber      String?   @map("vehicle_number") @db.VarChar(50)
+  driverName         String?   @map("driver_name") @db.VarChar(255)
+  status             GrnStatus @default(DRAFT)
+  receivedBy         String?   @map("received_by") @db.Char(36)
+  remarks            String?   @db.Text
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  project       Project              @relation(fields: [projectId], references: [id])
+  supplier      Supplier             @relation(fields: [supplierId], references: [id])
+  purchaseOrder PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  receiver      User?                @relation("GrnReceivedBy", fields: [receivedBy], references: [id], onDelete: SetNull)
+  items         GrnItem[]
+  inspections   MaterialInspection[]
+
+  @@index([projectId])
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([deliveryDate])
+  @@index([status])
+  @@map("goods_received_notes")
+}
+
+model GrnItem {
+  id                String    @id @default(uuid()) @db.Char(36)
+  grnId             String    @map("grn_id") @db.Char(36)
+  materialId        String    @map("material_id") @db.Char(36)
+  orderedQuantity   Decimal?  @map("ordered_quantity") @db.Decimal(18, 3)
+  deliveredQuantity Decimal   @map("delivered_quantity") @db.Decimal(18, 3)
+  damagedQuantity   Decimal   @default(0) @map("damaged_quantity") @db.Decimal(18, 3)
+  rejectedQuantity  Decimal   @default(0) @map("rejected_quantity") @db.Decimal(18, 3)
+  acceptedQuantity  Decimal   @default(0) @map("accepted_quantity") @db.Decimal(18, 3)
+  unitId            String    @map("unit_id") @db.Char(36)
+  batchNumber       String?   @map("batch_number") @db.VarChar(100)
+  manufacturingDate DateTime? @map("manufacturing_date") @db.Date
+  expiryDate        DateTime? @map("expiry_date") @db.Date
+  storageLocationId String?   @map("storage_location_id") @db.Char(36)
+  remarks           String?   @db.Text
+
+  grn             GoodsReceivedNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  material        Material          @relation(fields: [materialId], references: [id])
+  unit            Unit              @relation(fields: [unitId], references: [id])
+  storageLocation StorageLocation?  @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  inspectionItems InspectionItem[]
+
+  @@index([grnId])
+  @@index([materialId])
+  @@index([unitId])
+  @@index([storageLocationId])
+  @@map("grn_items")
+}
+
+// ============================================================
+// MATERIAL INSPECTIONS
+// ============================================================
+
+model MaterialInspection {
+  id               String              @id @default(uuid()) @db.Char(36)
+  inspectionNumber String              @unique @map("inspection_number") @db.VarChar(50)
+  grnId            String              @map("grn_id") @db.Char(36)
+  inspectionDate   DateTime            @map("inspection_date") @db.Date
+  inspectorId      String              @map("inspector_id") @db.Char(36)
+  status           InspectionStatus    @default(PENDING)
+  decision         InspectionDecision?
+  remarks          String?             @db.Text
+  correctiveAction String?             @map("corrective_action") @db.Text
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  grn       GoodsReceivedNote @relation(fields: [grnId], references: [id])
+  inspector User              @relation("Inspector", fields: [inspectorId], references: [id])
+  items     InspectionItem[]
+
+  @@index([grnId])
+  @@index([inspectorId])
+  @@index([inspectionDate])
+  @@map("material_inspections")
+}
+
+model InspectionItem {
+  id                            String   @id @default(uuid()) @db.Char(36)
+  inspectionId                  String   @map("inspection_id") @db.Char(36)
+  grnItemId                     String   @map("grn_item_id") @db.Char(36)
+  quantityInspected             Decimal? @map("quantity_inspected") @db.Decimal(18, 3)
+  quantityAccepted              Decimal  @default(0) @map("quantity_accepted") @db.Decimal(18, 3)
+  quantityConditionallyAccepted Decimal  @default(0) @map("quantity_conditionally_accepted") @db.Decimal(18, 3)
+  quantityQuarantined           Decimal  @default(0) @map("quantity_quarantined") @db.Decimal(18, 3)
+  quantityRejected              Decimal  @default(0) @map("quantity_rejected") @db.Decimal(18, 3)
+  specification                 String?  @db.Text
+  requiredStandard              String?  @map("required_standard") @db.VarChar(100)
+  certificateNumber             String?  @map("certificate_number") @db.VarChar(100)
+  testRequired                  Boolean  @default(false) @map("test_required")
+  testResult                    String?  @map("test_result") @db.Text
+  remarks                       String?  @db.Text
+
+  inspection MaterialInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  grnItem    GrnItem            @relation(fields: [grnItemId], references: [id])
+  Material   Material?          @relation(fields: [materialId], references: [id])
+  materialId String?            @db.Char(36)
+
+  @@index([inspectionId])
+  @@index([grnItemId])
+  @@map("inspection_items")
+}
+
+// ============================================================
+// INVENTORY
+// ============================================================
+
+model InventoryBalance {
+  id                String   @id @default(uuid()) @db.Char(36)
+  projectId         String   @map("project_id") @db.Char(36)
+  materialId        String   @map("material_id") @db.Char(36)
+  warehouseId       String   @map("warehouse_id") @db.Char(36)
+  storageLocationId String?  @map("storage_location_id") @db.Char(36)
+  physicalQuantity  Decimal  @default(0) @map("physical_quantity") @db.Decimal(18, 3)
+  reservedQuantity  Decimal  @default(0) @map("reserved_quantity") @db.Decimal(18, 3)
+  averageUnitCost   Decimal  @default(0) @map("average_unit_cost") @db.Decimal(18, 2)
+  stockValue        Decimal  @default(0) @map("stock_value") @db.Decimal(18, 2)
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project         Project          @relation(fields: [projectId], references: [id])
+  material        Material         @relation(fields: [materialId], references: [id])
+  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, materialId, warehouseId, storageLocationId])
+  @@index([materialId])
+  @@index([projectId])
+  @@index([warehouseId])
+  @@map("inventory_balances")
+}
+
+model InventoryTransaction {
+  id                String                   @id @default(uuid()) @db.Char(36)
+  transactionNumber String                   @unique @map("transaction_number") @db.VarChar(50)
+  projectId         String                   @map("project_id") @db.Char(36)
+  materialId        String                   @map("material_id") @db.Char(36)
+  warehouseId       String                   @map("warehouse_id") @db.Char(36)
+  storageLocationId String?                  @map("storage_location_id") @db.Char(36)
+  transactionType   InventoryTransactionType @map("transaction_type")
+  quantity          Decimal                  @db.Decimal(18, 3)
+  unitCost          Decimal?                 @map("unit_cost") @db.Decimal(18, 2)
+  totalValue        Decimal?                 @map("total_value") @db.Decimal(18, 2)
+  referenceType     String?                  @map("reference_type") @db.VarChar(50)
+  referenceId       String?                  @map("reference_id") @db.Char(36)
+  transactionDate   DateTime                 @default(now()) @map("transaction_date")
+  performedBy       String?                  @map("performed_by") @db.Char(36)
+  reason            String?                  @db.Text
+  createdAt         DateTime                 @default(now()) @map("created_at")
+
+  project         Project          @relation(fields: [projectId], references: [id])
+  material        Material         @relation(fields: [materialId], references: [id])
+  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  performer       User?            @relation(fields: [performedBy], references: [id], onDelete: SetNull)
+
+  @@index([materialId])
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([transactionDate])
+  @@index([transactionType])
+  @@index([referenceType, referenceId])
+  @@map("inventory_transactions")
+}
+
+// ============================================================
+// MATERIAL ISSUES
+// ============================================================
+
+model MaterialIssue {
+  id          String              @id @default(uuid()) @db.Char(36)
+  issueNumber String              @unique @map("issue_number") @db.VarChar(50)
+  projectId   String              @map("project_id") @db.Char(36)
+  warehouseId String              @map("warehouse_id") @db.Char(36)
+  requestedBy String?             @map("requested_by") @db.Char(36)
+  approvedBy  String?             @map("approved_by") @db.Char(36)
+  receiverId  String?             @map("receiver_id") @db.Char(36)
+  activityId  String?             @map("activity_id") @db.Char(36)
+  buildingId  String?             @map("building_id") @db.Char(36)
+  zoneId      String?             @map("zone_id") @db.Char(36)
+  issueDate   DateTime            @map("issue_date") @db.Date
+  status      MaterialIssueStatus @default(DRAFT)
+  purpose     String?             @db.Text
+  remarks     String?             @db.Text
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  project     Project               @relation(fields: [projectId], references: [id])
+  warehouse   Warehouse             @relation(fields: [warehouseId], references: [id])
+  requester   User?                 @relation("IssueRequestedBy", fields: [requestedBy], references: [id], onDelete: SetNull)
+  approver    User?                 @relation("IssueApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+  receiver    User?                 @relation("IssueReceiver", fields: [receiverId], references: [id], onDelete: SetNull)
+  activity    Activity?             @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  building    Building?             @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  zone        Zone?                 @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  items       MaterialIssueItem[]
+  returns     MaterialReturn[]
+  consumption MaterialConsumption[]
+
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([issueDate])
+  @@map("material_issues")
+}
+
+model MaterialIssueItem {
+  id                String   @id @default(uuid()) @db.Char(36)
+  issueId           String   @map("issue_id") @db.Char(36)
+  materialId        String   @map("material_id") @db.Char(36)
+  approvedQuantity  Decimal  @map("approved_quantity") @db.Decimal(18, 3)
+  issuedQuantity    Decimal  @map("issued_quantity") @db.Decimal(18, 3)
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(18, 2)
+  storageLocationId String?  @map("storage_location_id") @db.Char(36)
+
+  issue           MaterialIssue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  material        Material         @relation(fields: [materialId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+
+  @@index([issueId])
+  @@index([materialId])
+  @@index([storageLocationId])
+  @@map("material_issue_items")
+}
+
+// ============================================================
+// MATERIAL RETURNS
+// ============================================================
+
+model MaterialReturn {
+  id              String               @id @default(uuid()) @db.Char(36)
+  returnNumber    String               @unique @map("return_number") @db.VarChar(50)
+  projectId       String               @map("project_id") @db.Char(36)
+  originalIssueId String?              @map("original_issue_id") @db.Char(36)
+  returnedBy      String?              @map("returned_by") @db.Char(36)
+  receivedBy      String?              @map("received_by") @db.Char(36)
+  returnDate      DateTime             @map("return_date") @db.Date
+  reason          String?              @db.Text
+  status          MaterialReturnStatus @default(PENDING)
+  remarks         String?              @db.Text
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  project       Project              @relation(fields: [projectId], references: [id])
+  originalIssue MaterialIssue?       @relation(fields: [originalIssueId], references: [id], onDelete: SetNull)
+  returner      User?                @relation("ReturnReturnedBy", fields: [returnedBy], references: [id], onDelete: SetNull)
+  receiver      User?                @relation("ReturnReceivedBy", fields: [receivedBy], references: [id], onDelete: SetNull)
+  items         MaterialReturnItem[]
+
+  @@index([projectId])
+  @@index([originalIssueId])
+  @@index([returnDate])
+  @@map("material_returns")
+}
+
+model MaterialReturnItem {
+  id               String                   @id @default(uuid()) @db.Char(36)
+  returnId         String                   @map("return_id") @db.Char(36)
+  materialId       String                   @map("material_id") @db.Char(36)
+  issuedQuantity   Decimal?                 @map("issued_quantity") @db.Decimal(18, 3)
+  consumedQuantity Decimal?                 @map("consumed_quantity") @db.Decimal(18, 3)
+  returnedQuantity Decimal                  @map("returned_quantity") @db.Decimal(18, 3)
+  damagedQuantity  Decimal                  @default(0) @map("damaged_quantity") @db.Decimal(18, 3)
+  acceptedQuantity Decimal                  @default(0) @map("accepted_quantity") @db.Decimal(18, 3)
+  rejectedQuantity Decimal                  @default(0) @map("rejected_quantity") @db.Decimal(18, 3)
+  conditionStatus  MaterialConditionStatus? @map("condition_status")
+  remarks          String?                  @db.Text
+
+  return   MaterialReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  material Material       @relation(fields: [materialId], references: [id])
+
+  @@index([returnId])
+  @@index([materialId])
+  @@map("material_return_items")
+}
+
+// ============================================================
+// STOCK COUNTS
+// ============================================================
+
+model StockCount {
+  id          String           @id @default(uuid()) @db.Char(36)
+  countNumber String           @unique @map("count_number") @db.VarChar(50)
+  projectId   String           @map("project_id") @db.Char(36)
+  warehouseId String?          @map("warehouse_id") @db.Char(36)
+  countDate   DateTime         @map("count_date") @db.Date
+  countedBy   String?          @map("counted_by") @db.Char(36)
+  verifiedBy  String?          @map("verified_by") @db.Char(36)
+  status      StockCountStatus @default(DRAFT)
+  remarks     String?          @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  project   Project          @relation(fields: [projectId], references: [id])
+  warehouse Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  counter   User?            @relation("StockCountedBy", fields: [countedBy], references: [id], onDelete: SetNull)
+  verifier  User?            @relation("StockVerifiedBy", fields: [verifiedBy], references: [id], onDelete: SetNull)
+  items     StockCountItem[]
+
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([countDate])
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id                String  @id @default(uuid()) @db.Char(36)
+  stockCountId      String  @map("stock_count_id") @db.Char(36)
+  materialId        String  @map("material_id") @db.Char(36)
+  storageLocationId String? @map("storage_location_id") @db.Char(36)
+  systemQuantity    Decimal @map("system_quantity") @db.Decimal(18, 3)
+  physicalQuantity  Decimal @map("physical_quantity") @db.Decimal(18, 3)
+  reason            String? @db.Text
+
+  stockCount      StockCount       @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  material        Material         @relation(fields: [materialId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+
+  @@index([stockCountId])
+  @@index([materialId])
+  @@index([storageLocationId])
+  @@map("stock_count_items")
+}
+
+// ============================================================
+// STOCK ADJUSTMENTS
+// ============================================================
+
+model StockAdjustment {
+  id               String                @id @default(uuid()) @db.Char(36)
+  adjustmentNumber String                @unique @map("adjustment_number") @db.VarChar(50)
+  projectId        String                @map("project_id") @db.Char(36)
+  warehouseId      String                @map("warehouse_id") @db.Char(36)
+  requestedBy      String?               @map("requested_by") @db.Char(36)
+  approvedBy       String?               @map("approved_by") @db.Char(36)
+  adjustmentDate   DateTime              @map("adjustment_date") @db.Date
+  status           StockAdjustmentStatus @default(PENDING)
+  reason           String                @db.Text
+  createdAt        DateTime              @default(now()) @map("created_at")
+
+  project   Project   @relation(fields: [projectId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  requester User?     @relation("AdjustmentRequestedBy", fields: [requestedBy], references: [id], onDelete: SetNull)
+  approver  User?     @relation("AdjustmentApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("stock_adjustments")
+}
+
+// ============================================================
+// CONSUMPTION
+// ============================================================
+
+model MaterialConsumption {
+  id               String   @id @default(uuid()) @db.Char(36)
+  projectId        String   @map("project_id") @db.Char(36)
+  materialId       String   @map("material_id") @db.Char(36)
+  activityId       String?  @map("activity_id") @db.Char(36)
+  buildingId       String?  @map("building_id") @db.Char(36)
+  zoneId           String?  @map("zone_id") @db.Char(36)
+  issueId          String?  @map("issue_id") @db.Char(36)
+  consumptionDate  DateTime @map("consumption_date") @db.Date
+  plannedQuantity  Decimal? @map("planned_quantity") @db.Decimal(18, 3)
+  issuedQuantity   Decimal? @map("issued_quantity") @db.Decimal(18, 3)
+  returnedQuantity Decimal? @map("returned_quantity") @db.Decimal(18, 3)
+  consumedQuantity Decimal? @map("consumed_quantity") @db.Decimal(18, 3)
+  remarks          String?  @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  project  Project        @relation(fields: [projectId], references: [id])
+  material Material       @relation(fields: [materialId], references: [id])
+  activity Activity?      @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  building Building?      @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  zone     Zone?          @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  issue    MaterialIssue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([materialId])
+  @@index([activityId])
+  @@index([consumptionDate])
+  @@map("material_consumption")
+}
+
+// ============================================================
+// WASTAGE
+// ============================================================
+
+model MaterialWastage {
+  id          String                @id @default(uuid()) @db.Char(36)
+  projectId   String                @map("project_id") @db.Char(36)
+  materialId  String                @map("material_id") @db.Char(36)
+  activityId  String?               @map("activity_id") @db.Char(36)
+  buildingId  String?               @map("building_id") @db.Char(36)
+  wastageDate DateTime              @map("wastage_date") @db.Date
+  quantity    Decimal               @db.Decimal(18, 3)
+  reason      String                @db.Text
+  reportedBy  String?               @map("reported_by") @db.Char(36)
+  approvedBy  String?               @map("approved_by") @db.Char(36)
+  status      StockAdjustmentStatus @default(PENDING)
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  project  Project   @relation(fields: [projectId], references: [id])
+  material Material  @relation(fields: [materialId], references: [id])
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  reporter User?     @relation("WastageReportedBy", fields: [reportedBy], references: [id], onDelete: SetNull)
+  approver User?     @relation("WastageApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([materialId])
+  @@index([activityId])
+  @@index([wastageDate])
+  @@map("material_wastage")
+}
+
+// ============================================================
+// DOCUMENTS
+// ============================================================
+
+model Document {
+  id            String   @id @default(uuid()) @db.Char(36)
+  projectId     String?  @map("project_id") @db.Char(36)
+  documentType  String   @map("document_type") @db.VarChar(50)
+  fileName      String   @map("file_name") @db.VarChar(255)
+  fileUrl       String   @map("file_url") @db.Text
+  mimeType      String?  @map("mime_type") @db.VarChar(100)
+  fileSize      BigInt?  @map("file_size")
+  uploadedBy    String?  @map("uploaded_by") @db.Char(36)
+  referenceType String?  @map("reference_type") @db.VarChar(50)
+  referenceId   String?  @map("reference_id") @db.Char(36)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  project  Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploader User?    @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([referenceType, referenceId])
+  @@index([uploadedBy])
+  @@map("documents")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id               String           @id @default(uuid()) @db.Char(36)
+  userId           String           @map("user_id") @db.Char(36)
+  title            String           @db.VarChar(255)
+  message          String           @db.Text
+  notificationType NotificationType @default(INFO) @map("notification_type")
+  referenceType    String?          @map("reference_type") @db.VarChar(50)
+  referenceId      String?          @map("reference_id") @db.Char(36)
+  isRead           Boolean          @default(false) @map("is_read")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================
+// AUDIT LOGS
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Char(36)
+  userId     String?  @map("user_id") @db.Char(36)
+  action     String   @db.VarChar(50)
+  entityType String   @map("entity_type") @db.VarChar(100)
+  entityId   String?  @map("entity_id") @db.Char(36)
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
