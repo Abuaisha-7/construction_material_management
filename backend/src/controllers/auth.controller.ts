@@ -5,6 +5,9 @@ import {
   hashPassword
 } from "../utils/password";
 import { generateToken } from "../utils/jwt";
+import {
+  authenticateUser
+} from "../services/auth.service";
 
 export async function register(
   req: Request,
@@ -64,86 +67,46 @@ export async function login(
   res: Response
 ) {
   try {
+
     const {
       email,
       password
     } = req.body;
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        roles: {
-          include: {
-            role: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password"
-      });
-    }
-
-    const validPassword =
-      await comparePassword(
-        password,
-        user.passwordHash
+    const result =
+      await authenticateUser(
+        email,
+        password
       );
 
-    if (!validPassword) {
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: result
+    });
+
+  } catch (error) {
+
+    if (
+      error instanceof Error &&
+      error.message === "INVALID_CREDENTIALS"
+    ) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password"
       });
     }
 
-    if (user.status !== "ACTIVE") {
+    if (
+      error instanceof Error &&
+      error.message === "ACCOUNT_INACTIVE"
+    ) {
       return res.status(403).json({
         success: false,
-        message: "User account is not active"
+        message: "Your account is inactive"
       });
     }
 
-    const token = generateToken({
-      userId: user.id,
-      email: user.email
-    });
-
-    return res.json({
-      success: true,
-      message: "Login successful",
-      data: {
-        token,
-        user: {
-          id: user.id,
-          fullName: user.fullName,
-          email: user.email,
-          roles: user.roles.map(
-            item => item.role.name
-          ),
-          permissions:
-            user.roles.flatMap(
-              item =>
-                item.role.permissions.map(
-                  permission =>
-                    permission.permission.name
-                )
-            )
-        }
-      }
-    });
-  } catch (error) {
     console.error(error);
 
     return res.status(500).json({

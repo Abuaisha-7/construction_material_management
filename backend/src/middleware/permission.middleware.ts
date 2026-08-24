@@ -9,8 +9,8 @@ import {
   
   import { prisma } from "../config/database";
   
-  export function requireRole(
-    ...allowedRoles: string[]
+  export function requirePermission(
+    permissionName: string
   ) {
     return async (
       req: AuthRequest,
@@ -35,7 +35,15 @@ import {
             include: {
               roles: {
                 include: {
-                  role: true
+                  role: {
+                    include: {
+                      permissions: {
+                        include: {
+                          permission: true
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -48,21 +56,22 @@ import {
           });
         }
   
-        const userRoles =
-          user.roles.map(
-            item => item.role.name
+        const permissions =
+          user.roles.flatMap(
+            userRole =>
+              userRole.role.permissions.map(
+                item =>
+                  item.permission.name
+              )
           );
   
-        const authorized =
-          userRoles.some(
-            role =>
-              allowedRoles.includes(role)
-          );
-  
-        if (!authorized) {
+        if (
+          !permissions.includes(permissionName)
+        ) {
           return res.status(403).json({
             success: false,
-            message: "You do not have permission to perform this action"
+            message:
+              `Missing permission: ${permissionName}`
           });
         }
   
@@ -74,7 +83,7 @@ import {
   
         return res.status(500).json({
           success: false,
-          message: "Authorization failed"
+          message: "Permission check failed"
         });
       }
     };
