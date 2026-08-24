@@ -1,4 +1,19 @@
 {
+
+  "name": "construction-material-management-api",
+  "version": "1.0.0",
+  "description": "Construction Project Material Management System API",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "tsx prisma/seed.ts"
+  },
+  
   "dependencies": {
     "@prisma/client": "^7.9.1",
     "cors": "^2.8.6",
@@ -7,5 +22,15 @@
     "mysql2": "^3.23.4",
     "prisma": "^6.12.0",
     "sanitize": "^2.1.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   }
 }
