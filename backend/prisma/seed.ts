@@ -24,6 +24,7 @@ const permissions = [
   "suppliers:read",
   "suppliers:create",
   "suppliers:update",
+  "suppliers:delete",
 
   "material_requests:read",
   "material_requests:create",
