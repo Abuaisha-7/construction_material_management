@@ -4,6 +4,7 @@ import helmet from "helmet";
 
 import authRoutes from "./routes/auth.routes";
 import materialRoutes from "./routes/material.routes";
+import projectRoutes from "./routes/project.routes";
 
 import { env } from "./config/env";
 
@@ -49,6 +50,11 @@ app.use(
 app.use(
   "/api/materials",
   materialRoutes
+);
+
+app.use(
+  "/api/projects",
+  projectRoutes
 );
 
 export default app;
