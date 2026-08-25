@@ -19,6 +19,15 @@ export interface CreateMaterialInput {
   isActive?: boolean;
 }
 
+export interface GetMaterialsParams {
+  search?: string;
+  categoryId?: string;
+  unitId?: string;
+  isActive?: boolean;
+  page?: number;
+  limit?: number;
+}
+
 export async function createMaterial(
   data: CreateMaterialInput
 ) {
@@ -108,114 +117,98 @@ export async function createMaterial(
 }
 
 export async function getMaterials(
-    params: {
-      search?: string;
-      categoryId?: string;
-      unitId?: string;
-      isActive?: boolean;
-      page?: number;
-      limit?: number;
-    }
-  ) {
-    const page =
-      params.page || 1;
-  
-    const limit =
-      params.limit || 20;
-  
-    const skip =
-      (page - 1) * limit;
-  
-    const where = {
-      ...(params.search
-        ? {
-            OR: [
-              {
-                materialCode: {
-                  contains:
-                    params.search
-                }
-              },
-              {
-                name: {
-                  contains:
-                    params.search
-                }
-              },
-              {
-                specification: {
-                  contains:
-                    params.search
-                }
-              },
-              {
-                manufacturer: {
-                  contains:
-                    params.search
-                }
-              }
-            ]
-          }
-        : {}),
-  
-      ...(params.categoryId
-        ? {
-            categoryId:
-              params.categoryId
-          }
-        : {}),
-  
-      ...(params.unitId
-        ? {
-            unitId:
-              params.unitId
-          }
-        : {}),
-  
-      ...(params.isActive !== undefined
-        ? {
-            isActive:
-              params.isActive
-          }
-        : {})
-    };
-  
-    const [
-      materials,
-      total
-    ] = await prisma.$transaction([
+  params: GetMaterialsParams
+) {
+  const {
+    search,
+    categoryId,
+    unitId,
+    isActive,
+    page = 1,
+    limit = 20,
+  } = params;
+
+  const skip = (page - 1) * limit;
+
+  const where: any = {};
+
+  // Search
+  if (search) {
+    where.OR = [
+      {
+        materialCode: {
+          contains: search,
+        },
+      },
+      {
+        name: {
+          contains: search,
+        },
+      },
+      {
+        specification: {
+          contains: search,
+        },
+      },
+      {
+        standard: {
+          contains: search,
+        },
+      },
+      {
+        description: {
+          contains: search,
+        },
+      },
+    ];
+  }
+
+  // Category filter
+  if (categoryId) {
+    where.categoryId = categoryId;
+  }
+
+  // Unit filter
+  if (unitId) {
+    where.unitId = unitId;
+  }
+
+  // Active filter
+  if (isActive !== undefined) {
+    where.isActive = isActive;
+  }
+
+  const [materials, total] =
+    await prisma.$transaction([
       prisma.material.findMany({
         where,
+
         include: {
           category: true,
-          unit: true
+          unit: true,
         },
+
         orderBy: {
-          name: "asc"
+          name: "asc",
         },
+
         skip,
-        take: limit
+        take: limit,
       }),
-  
+
       prisma.material.count({
-        where
-      })
+        where,
+      }),
     ]);
-  
-    return {
-      materials,
-  
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages:
-          Math.ceil(
-            total / limit
-          )
-      }
-    };
-  }
+
+  return {
+    materials,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
 
 export async function getMaterialById(
     materialId: string
