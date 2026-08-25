@@ -1,7 +1,7 @@
 import { prisma } from "../config/database";
 
 interface CreateProjectInput {
-  code: string;
+  projectCode: string;
   name: string;
   description?: string;
   clientName: string;
@@ -24,7 +24,7 @@ export async function createProject(
   const existingProject =
     await prisma.project.findUnique({
       where: {
-        code: data.code
+        projectCode: data.projectCode,
       }
     });
 
@@ -58,7 +58,7 @@ export async function getProjects(params: {
         ? {
             OR: [
               {
-                code: {
+                projectCode: {
                   contains: params.search
                 }
               },
