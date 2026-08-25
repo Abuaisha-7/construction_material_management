@@ -1,203 +1,182 @@
-import { Request, Response } from "express";
-import { prisma } from "../config/database";
+import {
+  Request,
+  Response
+} from "express";
 
-export async function createMaterial(
+import {
+  createMaterial,
+  getMaterials,
+  getMaterialById
+} from "../services/material.service";
+
+import {
+  createMaterialSchema,
+} from "../schemas/material.schema";
+
+
+export async function createMaterialController(
   req: Request,
   res: Response
 ) {
   try {
-    const material = await prisma.material.create({
-      data: req.body
-    });
+    const result =
+      createMaterialSchema.safeParse(req.body);
 
-    res.status(201).json({
-      success: true,
-      data: material
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to create material"
-    });
-  }
-}
-
-export async function getMaterials(
-  req: Request,
-  res: Response
-) {
-  try {
-    const {
-      search,
-      categoryId,
-      isActive
-    } = req.query;
-
-    const materials =
-      await prisma.material.findMany({
-        where: {
-          ...(search
-            ? {
-                OR: [
-                  {
-                    name: {
-                      contains: String(search)
-                    }
-                  },
-                  {
-                    materialCode: {
-                      contains: String(search)
-                    }
-                  }
-                ]
-              }
-            : {}),
-
-          ...(categoryId
-            ? {
-                categoryId: String(categoryId)
-              }
-            : {}),
-
-          ...(isActive !== undefined
-            ? {
-                isActive:
-                  String(isActive) === "true"
-              }
-            : {})
-        },
-
-        include: {
-          category: true,
-          unit: true,
-          suppliers: {
-            include: {
-              supplier: true
-            }
-          }
-        },
-
-        orderBy: {
-          name: "asc"
-        }
-      });
-
-    res.json({
-      success: true,
-      count: materials.length,
-      data: materials
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch materials"
-    });
-  }
-}
-
-export async function getMaterialById(
-  req: Request,
-  res: Response
-) {
-  try {
-    const material =
-      await prisma.material.findUnique({
-        where: {
-          id: req.params.id
-        },
-        include: {
-          category: true,
-          unit: true,
-          suppliers: {
-            include: {
-              supplier: true
-            }
-          },
-          inventoryBalances: {
-            include: {
-              warehouse: true,
-              storageLocation: true
-            }
-          }
-        }
-      });
-
-    if (!material) {
-      return res.status(404).json({
+    if (!result.success) {
+      return res.status(400).json({
         success: false,
-        message: "Material not found"
+        message: "Validation failed",
+        errors: result.error.flatten(),
       });
     }
 
-    res.json({
+    const material =
+      await createMaterial(result.data);
+
+    return res.status(201).json({
       success: true,
-      data: material
+      message: "Material created successfully",
+      data: material,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
 
-    res.status(500).json({
+    if (
+      error.message ===
+      "Material code already exists"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (
+      error.message ===
+      "Material category not found"
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (
+      error.message ===
+      "Unit of measurement not found"
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message: "Failed to fetch material"
+      message: "Failed to create material",
     });
   }
 }
 
-export async function updateMaterial(
+export async function getMaterialsController(
   req: Request,
   res: Response
 ) {
   try {
-    const material =
-      await prisma.material.update({
-        where: {
-          id: req.params.id
-        },
-        data: req.body
+
+    const search =
+      req.query.search
+        ? String(req.query.search)
+        : undefined;
+
+    const categoryId =
+      req.query.categoryId
+        ? String(req.query.categoryId)
+        : undefined;
+
+    const unitId =
+      req.query.unitId
+        ? String(req.query.unitId)
+        : undefined;
+
+    const isActive =
+      req.query.isActive !== undefined
+        ? String(
+            req.query.isActive
+          ) === "true"
+        : undefined;
+
+    const page =
+      Number(req.query.page) || 1;
+
+    const limit =
+      Number(req.query.limit) || 20;
+
+    const result =
+      await getMaterials({
+        search,
+        categoryId,
+        unitId,
+        isActive,
+        page,
+        limit
       });
 
-    res.json({
+    return res.json({
       success: true,
-      data: material
+      data: result.materials,
+      pagination:
+        result.pagination
     });
+
   } catch (error) {
+
     console.error(error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to update material"
+      message:
+        "Failed to fetch materials"
     });
   }
 }
 
-export async function deleteMaterial(
+export async function getMaterialController(
   req: Request,
   res: Response
 ) {
   try {
-    await prisma.material.update({
-      where: {
-        id: req.params.id
-      },
-      data: {
-        isActive: false
-      }
+
+    const material =
+      await getMaterialById(
+        req.params.id
+      );
+
+    return res.json({
+      success: true,
+      data: material
     });
 
-    res.json({
-      success: true,
-      message: "Material deactivated successfully"
-    });
   } catch (error) {
+
+    if (
+      error instanceof Error &&
+      error.message ===
+        "MATERIAL_NOT_FOUND"
+    ) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Material not found"
+      });
+    }
+
     console.error(error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to deactivate material"
+      message:
+        "Failed to fetch material"
     });
   }
 }

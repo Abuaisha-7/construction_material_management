@@ -5,6 +5,8 @@ import helmet from "helmet";
 import authRoutes from "./routes/auth.routes";
 import materialRoutes from "./routes/material.routes";
 import projectRoutes from "./routes/project.routes";
+import materialCategoryRoutes from "./routes/material-category.routes";
+import unitRoutes from "./routes/unit.routes";
 
 import { env } from "./config/env";
 
@@ -56,5 +58,12 @@ app.use(
   "/api/projects",
   projectRoutes
 );
+
+app.use(
+  "/api/material-categories",
+  materialCategoryRoutes
+);
+
+app.use("/api/units", unitRoutes);
 
 export default app;

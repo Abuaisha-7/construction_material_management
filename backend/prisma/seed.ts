@@ -48,130 +48,436 @@ const permissions = [
   "inventory:issue",
   "inventory:adjust",
 
-  "reports:read"
+  "reports:read",
 ];
 
-async function main() {
-  console.log("🌱 Starting database seed...");
+const units = [
+  {
+    code: "BAG",
+    name: "Bag",
+    symbol: "bag",
+  },
+  {
+    code: "KG",
+    name: "Kilogram",
+    symbol: "kg",
+  },
+  {
+    code: "TON",
+    name: "Ton",
+    symbol: "ton",
+  },
+  {
+    code: "M",
+    name: "Meter",
+    symbol: "m",
+  },
+  {
+    code: "M2",
+    name: "Square Meter",
+    symbol: "m²",
+  },
+  {
+    code: "M3",
+    name: "Cubic Meter",
+    symbol: "m³",
+  },
+  {
+    code: "L",
+    name: "Liter",
+    symbol: "L",
+  },
+  {
+    code: "PCS",
+    name: "Piece",
+    symbol: "pcs",
+  },
+  {
+    code: "SET",
+    name: "Set",
+    symbol: "set",
+  },
+  {
+    code: "ROLL",
+    name: "Roll",
+    symbol: "roll",
+  },
+  {
+    code: "BOX",
+    name: "Box",
+    symbol: "box",
+  },
+  {
+    code: "BUNDLE",
+    name: "Bundle",
+    symbol: "bundle",
+  },
+  {
+    code: "SHEET",
+    name: "Sheet",
+    symbol: "sheet",
+  },
+  {
+    code: "LENGTH",
+    name: "Length",
+    symbol: "length",
+  },
+  {
+    code: "TRIP",
+    name: "Trip",
+    symbol: "trip",
+  },
+  {
+    code: "DAY",
+    name: "Day",
+    symbol: "day",
+  },
+  {
+    code: "HOUR",
+    name: "Hour",
+    symbol: "hr",
+  },
+];
 
-  // --------------------------------------------------
-  // 1. Create permissions
-  // --------------------------------------------------
+const materialCategories = [
+  {
+    name: "Cement",
+    description: "Cement and cement-based binding materials used for construction.",
+  },
+  {
+    name: "Steel/Reinforcement",
+    description: "Reinforcement bars, steel sections, mesh and other reinforcement materials.",
+  },
+  {
+    name: "Aggregate",
+    description: "Coarse aggregates, crushed stone and other aggregates used in concrete.",
+  },
+  {
+    name: "Sand",
+    description: "Fine aggregates including river sand, washed sand and selected construction sand.",
+  },
+  {
+    name: "Concrete",
+    description: "Ready-mix concrete, concrete products and related materials.",
+  },
+  {
+    name: "Bricks/Blocks",
+    description: "Concrete blocks, hollow blocks, solid blocks, bricks and related masonry units.",
+  },
+  {
+    name: "Masonry",
+    description: "Materials used for masonry and wall construction.",
+  },
+  {
+    name: "Timber",
+    description: "Timber, wood and wooden construction materials.",
+  },
+  {
+    name: "Formwork",
+    description: "Formwork materials including plywood, panels, supports and accessories.",
+  },
+  {
+    name: "Roofing",
+    description: "Roof sheets, roofing accessories, membranes and related materials.",
+  },
+  {
+    name: "Flooring",
+    description: "Flooring materials and floor finishing products.",
+  },
+  {
+    name: "Tiles",
+    description: "Ceramic, porcelain, stone and other tile products.",
+  },
+  {
+    name: "Plumbing",
+    description: "Pipes, fittings, valves, sanitary and plumbing materials.",
+  },
+  {
+    name: "Electrical",
+    description: "Electrical cables, conduits, switches, sockets and electrical accessories.",
+  },
+  {
+    name: "Paint",
+    description: "Paints, primers, thinners, coatings and painting accessories.",
+  },
+  {
+    name: "Glass",
+    description: "Glass sheets, glazing materials and glass accessories.",
+  },
+  {
+    name: "Aluminum",
+    description: "Aluminum profiles, sheets and aluminum construction materials.",
+  },
+  {
+    name: "Doors & Windows",
+    description: "Doors, windows, frames and associated accessories.",
+  },
+  {
+    name: "Waterproofing",
+    description: "Waterproofing membranes, coatings, sealants and related materials.",
+  },
+  {
+    name: "Hardware",
+    description: "General construction hardware and building accessories.",
+  },
+  {
+    name: "Fasteners",
+    description: "Nails, screws, bolts, nuts, washers and other fastening materials.",
+  },
+  {
+    name: "Safety Equipment",
+    description: "Personal protective equipment and construction site safety materials.",
+  },
+  {
+    name: "Fuel",
+    description: "Fuel and petroleum products used for construction equipment and vehicles.",
+  },
+  {
+    name: "Tools",
+    description: "Hand tools, power tools and construction equipment tools.",
+  },
+  {
+    name: "Other",
+    description: "Construction materials that do not belong to another category.",
+  },
+];
+
+async function seedPermissions() {
+  console.log("🌱 Seeding permissions...");
 
   for (const permissionName of permissions) {
     await prisma.permission.upsert({
       where: {
-        name: permissionName
+        name: permissionName,
       },
       update: {},
       create: {
-        name: permissionName
-      }
+        name: permissionName,
+      },
     });
   }
 
-  console.log(`✅ ${permissions.length} permissions created/verified`);
+  console.log(`✅ ${permissions.length} permissions seeded.`);
+}
 
-  // --------------------------------------------------
-  // 2. Create Admin Role
-  // --------------------------------------------------
+async function seedUnits() {
+  console.log("🌱 Seeding units...");
 
-  const adminRole = await prisma.role.upsert({
-    where: {
-      name: "ADMIN"
-    },
-    update: {},
-    create: {
-      name: "ADMIN",
-      description: "System administrator with full access"
-    }
-  });
-
-  console.log(`✅ Admin role: ${adminRole.name}`);
-
-  // --------------------------------------------------
-  // 3. Assign all permissions to ADMIN
-  // --------------------------------------------------
-
-  const allPermissions = await prisma.permission.findMany();
-
-  for (const permission of allPermissions) {
-    await prisma.rolePermission.upsert({
+  for (const unit of units) {
+    await prisma.unit.upsert({
       where: {
-        roleId_permissionId: {
-          roleId: adminRole.id,
-          permissionId: permission.id
-        }
+        code: unit.code,
       },
-      update: {},
+      update: {
+        name: unit.name,
+        symbol: unit.symbol,
+      },
       create: {
-        roleId: adminRole.id,
-        permissionId: permission.id
-      }
+        code: unit.code,
+        name: unit.name,
+        symbol: unit.symbol,
+      },
     });
   }
 
-  console.log("✅ All permissions assigned to ADMIN");
+  console.log(`✅ ${units.length} units seeded.`);
+}
 
-  // --------------------------------------------------
-  // 4. Create Admin User
-  // --------------------------------------------------
+async function seedMaterialCategories() {
+  console.log("🌱 Seeding material categories...");
+
+  for (const category of materialCategories) {
+    await prisma.materialCategory.upsert({
+      where: {
+        name: category.name,
+      },
+      update: {
+        description: category.description,
+      },
+      create: {
+        name: category.name,
+        description: category.description,
+      },
+    });
+  }
+
+  console.log(
+    `✅ ${materialCategories.length} material categories seeded.`
+  );
+}
+
+async function seedAdminUser() {
+  console.log("🌱 Seeding admin user...");
 
   const passwordHash = await hashPassword("Admin@123");
 
-  const adminUser = await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: {
-      email: "admin@construction.local"
+      email: "admin@construction.local",
     },
-    update: {
-      fullName: "System Administrator",
-      passwordHash,
-      status: "ACTIVE"
-    },
+    update: {},
     create: {
       fullName: "System Administrator",
       email: "admin@construction.local",
-      phone: null,
+      phone: "+251900000000",
       passwordHash,
-      status: "ACTIVE"
-    }
+      status: "ACTIVE",
+    },
   });
 
-  console.log(`✅ Admin user: ${adminUser.email}`);
+  console.log(`✅ Admin user created: ${admin.email}`);
 
-  // --------------------------------------------------
-  // 5. Assign ADMIN role to user
-  // --------------------------------------------------
+  return admin;
+}
+
+async function seedRoles() {
+  console.log("🌱 Seeding roles...");
+
+  const roles = [
+    {
+      name: "ADMIN",
+      description: "System administrator with full access",
+    },
+    {
+      name: "PROJECT_MANAGER",
+      description: "Manages construction projects and project activities",
+    },
+    {
+      name: "STORE_KEEPER",
+      description: "Manages warehouse, inventory, receiving and issuing materials",
+    },
+    {
+      name: "PROCUREMENT_OFFICER",
+      description: "Manages suppliers and purchase orders",
+    },
+    {
+      name: "INSPECTOR",
+      description: "Performs material inspections and quality control",
+    },
+    {
+      name: "SITE_ENGINEER",
+      description: "Manages site material requests and consumption",
+    },
+  ];
+
+  for (const role of roles) {
+    await prisma.role.upsert({
+      where: {
+        name: role.name,
+      },
+      update: {
+        description: role.description,
+      },
+      create: {
+        name: role.name,
+        description: role.description,
+      },
+    });
+  }
+
+  console.log(`✅ ${roles.length} roles seeded.`);
+}
+
+async function seedAdminRole() {
+  console.log("🌱 Assigning ADMIN role...");
+
+  const admin = await prisma.user.findUnique({
+    where: {
+      email: "admin@construction.local",
+    },
+  });
+
+  const adminRole = await prisma.role.findUnique({
+    where: {
+      name: "ADMIN",
+    },
+  });
+
+  if (!admin || !adminRole) {
+    throw new Error("Admin user or ADMIN role not found.");
+  }
 
   await prisma.userRole.upsert({
     where: {
       userId_roleId: {
-        userId: adminUser.id,
-        roleId: adminRole.id
-      }
+        userId: admin.id,
+        roleId: adminRole.id,
+      },
     },
     update: {},
     create: {
-      userId: adminUser.id,
-      roleId: adminRole.id
-    }
+      userId: admin.id,
+      roleId: adminRole.id,
+    },
   });
 
-  console.log("✅ ADMIN role assigned to user");
+  console.log("✅ ADMIN role assigned.");
+}
 
-  console.log("");
-  console.log("======================================");
-  console.log("DATABASE SEED COMPLETED");
-  console.log("======================================");
-  console.log("Email:    admin@construction.local");
-  console.log("Password: Admin@123");
-  console.log("Role:     ADMIN");
-  console.log("======================================");
+async function seedAdminPermissions() {
+  console.log("🌱 Assigning permissions to ADMIN role...");
+
+  const adminRole = await prisma.role.findUnique({
+    where: {
+      name: "ADMIN",
+    },
+  });
+
+  if (!adminRole) {
+    throw new Error("ADMIN role not found.");
+  }
+
+  for (const permissionName of permissions) {
+    const permission = await prisma.permission.findUnique({
+      where: {
+        name: permissionName,
+      },
+    });
+
+    if (!permission) {
+      continue;
+    }
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: adminRole.id,
+          permissionId: permission.id,
+        },
+      },
+      update: {},
+      create: {
+        roleId: adminRole.id,
+        permissionId: permission.id,
+      },
+    });
+  }
+
+  console.log("✅ All permissions assigned to ADMIN.");
+}
+
+async function main() {
+  console.log("==========================================");
+  console.log(" Construction Material Management System");
+  console.log(" Database Seeding");
+  console.log("==========================================");
+
+  await seedPermissions();
+  await seedUnits();
+  await seedMaterialCategories();
+  await seedRoles();
+  await seedAdminUser();
+  await seedAdminRole();
+  await seedAdminPermissions();
+
+  console.log("==========================================");
+  console.log("✅ Database seeding completed successfully!");
+  console.log("==========================================");
 }
 
 main()
   .catch((error) => {
-    console.error("❌ Seed failed:");
+    console.error("❌ Database seeding failed:");
     console.error(error);
     process.exit(1);
   })

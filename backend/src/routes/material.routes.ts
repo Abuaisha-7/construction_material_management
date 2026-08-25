@@ -1,11 +1,9 @@
 import { Router } from "express";
 
 import {
-  createMaterial,
-  getMaterials,
-  getMaterialById,
-  updateMaterial,
-  deleteMaterial
+  createMaterialController,
+  getMaterialsController,
+  getMaterialController
 } from "../controllers/material.controller";
 
 import {
@@ -16,6 +14,14 @@ import {
   requirePermission
 } from "../middleware/permission.middleware";
 
+import {
+  validate
+} from "../middleware/validation.middleware";
+
+import {
+  createMaterialSchema
+} from "../schemas/material.schema";
+
 const router = Router();
 
 router.use(authenticate);
@@ -23,31 +29,20 @@ router.use(authenticate);
 router.get(
   "/",
   requirePermission("materials:read"),
-  getMaterials
+  getMaterialsController
 );
 
 router.get(
   "/:id",
   requirePermission("materials:read"),
-  getMaterialById
+  getMaterialController
 );
 
 router.post(
   "/",
   requirePermission("materials:create"),
-  createMaterial
-);
-
-router.patch(
-  "/:id",
-  requirePermission("materials:update"),
-  updateMaterial
-);
-
-router.delete(
-  "/:id",
-  requirePermission("materials:delete"),
-  deleteMaterial
+  validate(createMaterialSchema),
+  createMaterialController
 );
 
 export default router;
