@@ -927,7 +927,8 @@ enum MaterialRequestPriority {
 
 enum MaterialRequestStatus {
   DRAFT
-  PENDING_APPROVAL
+  SUBMITTED
+  UNDER_REVIEW
   RETURNED
   APPROVED
   PARTIALLY_APPROVED
