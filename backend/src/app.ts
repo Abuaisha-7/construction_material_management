@@ -7,6 +7,7 @@ import materialRoutes from "./routes/material.routes";
 import projectRoutes from "./routes/project.routes";
 import materialCategoryRoutes from "./routes/material-category.routes";
 import unitRoutes from "./routes/unit.routes";
+import supplierRoutes from "./routes/supplier.routes";
 
 import { env } from "./config/env";
 
@@ -65,5 +66,7 @@ app.use(
 );
 
 app.use("/api/units", unitRoutes);
+
+app.use("/api/suppliers", supplierRoutes);
 
 export default app;
