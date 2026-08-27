@@ -40,3 +40,37 @@ export async function generateRequestNumber(
 
   return `${prefix}${String(nextNumber).padStart(6, "0")}`;
 }
+
+export async function generatePurchaseOrderNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const lastOrder = await tx.purchaseOrder.findFirst({
+    where: {
+      purchaseOrderNumber: {
+        startsWith: `PO-${year}-`
+      }
+    },
+    orderBy: {
+      purchaseOrderNumber: "desc"
+    },
+    select: {
+      purchaseOrderNumber: true
+    }
+  });
+
+  let nextNumber = 1;
+
+  if (lastOrder) {
+    const lastSequence = Number(
+      lastOrder.purchaseOrderNumber.split("-")[2]
+    );
+
+    if (!Number.isNaN(lastSequence)) {
+      nextNumber = lastSequence + 1;
+    }
+  }
+
+  return `PO-${year}-${String(nextNumber).padStart(6, "0")}`;
+}
