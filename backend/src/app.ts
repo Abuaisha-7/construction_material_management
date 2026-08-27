@@ -10,6 +10,7 @@ import unitRoutes from "./routes/unit.routes";
 import supplierRoutes from "./routes/supplier.routes";
 import materialRequestRoutes from "./routes/material-request.routes";
 import purchaseOrderRoutes from "./routes/purchase-order.routes";
+import grnRoutes from "./routes/grn.routes";
 
 import { env } from "./config/env";
 
@@ -79,6 +80,11 @@ app.use(
 app.use(
   "/api/purchase-orders",
   purchaseOrderRoutes
+);
+
+app.use(
+  "/api/grns",
+  grnRoutes
 );
 
 export default app;

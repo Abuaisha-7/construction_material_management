@@ -509,3 +509,320 @@ export async function getPurchaseOrderById(
   
     return purchaseOrder;
   }
+
+  /**
+   * Submit Purchase Order
+   *
+   * DRAFT → PENDING_APPROVAL
+   */
+  export async function submitPurchaseOrder(
+    id: string,
+    userId: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const purchaseOrder =
+        await tx.purchaseOrder.findUnique({
+          where: {
+            id,
+          },
+        });
+  
+      if (!purchaseOrder) {
+        throw new Error("Purchase order not found");
+      }
+  
+      // Only DRAFT can be submitted
+      if (purchaseOrder.status !== "DRAFT") {
+        throw new Error(
+          `Purchase order cannot be submitted from ${purchaseOrder.status} status`
+        );
+      }
+  
+      // Optional: only creator can submit
+      if (
+        purchaseOrder.createdBy &&
+        purchaseOrder.createdBy !== userId
+      ) {
+        throw new Error(
+          "Only the purchase order creator can submit this purchase order"
+        );
+      }
+  
+      // Make sure PO has items
+      const itemCount =
+        await tx.purchaseOrderItem.count({
+          where: {
+            purchaseOrderId: id,
+          },
+        });
+  
+      if (itemCount === 0) {
+        throw new Error(
+          "Cannot submit a purchase order without items"
+        );
+      }
+  
+      const updatedPO =
+        await tx.purchaseOrder.update({
+          where: {
+            id,
+          },
+          data: {
+            status: "PENDING_APPROVAL",
+          },
+          include: {
+            project: true,
+            supplier: true,
+            items: {
+              include: {
+                material: true,
+              },
+            },
+            materialRequest: true,
+          },
+        });
+  
+      return updatedPO;
+    });
+  }
+  
+  
+  /**
+   * Approve Purchase Order
+   *
+   * PENDING_APPROVAL → APPROVED
+   */
+  export async function approvePurchaseOrder(
+    id: string,
+    userId: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const purchaseOrder =
+        await tx.purchaseOrder.findUnique({
+          where: {
+            id,
+          },
+          include: {
+            items: true,
+          },
+        });
+  
+      if (!purchaseOrder) {
+        throw new Error("Purchase order not found");
+      }
+  
+      // VERY IMPORTANT
+      // Cannot approve DRAFT directly
+      if (
+        purchaseOrder.status !==
+        "PENDING_APPROVAL"
+      ) {
+        throw new Error(
+          "Only PENDING_APPROVAL purchase orders can be approved"
+        );
+      }
+  
+      if (purchaseOrder.items.length === 0) {
+        throw new Error(
+          "Cannot approve a purchase order without items"
+        );
+      }
+  
+      // Make sure totals are valid
+      if (
+        new Prisma.Decimal(
+          purchaseOrder.totalAmount
+        ).lessThanOrEqualTo(0)
+      ) {
+        throw new Error(
+          "Purchase order total amount must be greater than zero"
+        );
+      }
+  
+      const updatedPO =
+        await tx.purchaseOrder.update({
+          where: {
+            id,
+          },
+          data: {
+            status: "APPROVED",
+          },
+          include: {
+            project: true,
+            supplier: true,
+            items: {
+              include: {
+                material: true,
+              },
+            },
+            materialRequest: true,
+          },
+        });
+  
+      return updatedPO;
+    });
+  }
+  
+  
+  /**
+   * Cancel Purchase Order
+   *
+   * DRAFT
+   * PENDING_APPROVAL
+   * APPROVED
+   * PARTIALLY_RECEIVED
+   *
+   * → CANCELLED
+   */
+  export async function cancelPurchaseOrder(
+    id: string,
+    userId: string,
+    reason: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const purchaseOrder =
+        await tx.purchaseOrder.findUnique({
+          where: {
+            id,
+          },
+        });
+  
+      if (!purchaseOrder) {
+        throw new Error("Purchase order not found");
+      }
+  
+      const cancellableStatuses = [
+        "DRAFT",
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "PARTIALLY_RECEIVED",
+      ] as const;
+  
+      if (
+        !cancellableStatuses.includes(
+          purchaseOrder.status
+        )
+      ) {
+        throw new Error(
+          `Purchase order cannot be cancelled from ${purchaseOrder.status} status`
+        );
+      }
+  
+      if (!reason || !reason.trim()) {
+        throw new Error(
+          "Cancellation reason is required"
+        );
+      }
+  
+      const updatedPO =
+        await tx.purchaseOrder.update({
+          where: {
+            id,
+          },
+          data: {
+            status: "CANCELLED",
+  
+            remarks: purchaseOrder.remarks
+              ? `${purchaseOrder.remarks}\nCancellation reason: ${reason.trim()}`
+              : `Cancellation reason: ${reason.trim()}`,
+          },
+          include: {
+            project: true,
+            supplier: true,
+            items: {
+              include: {
+                material: true,
+              },
+            },
+            materialRequest: true,
+          },
+        });
+  
+      return updatedPO;
+    });
+  }
+  
+  
+  /**
+   * Close Purchase Order
+   *
+   * FULLY_RECEIVED → CLOSED
+   */
+  export async function closePurchaseOrder(
+    id: string,
+    userId: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const purchaseOrder =
+        await tx.purchaseOrder.findUnique({
+          where: {
+            id,
+          },
+          include: {
+            items: true,
+          },
+        });
+  
+      if (!purchaseOrder) {
+        throw new Error("Purchase order not found");
+      }
+  
+      // VERY IMPORTANT
+      // Only FULLY_RECEIVED can be closed
+      if (
+        purchaseOrder.status !==
+        "FULLY_RECEIVED"
+      ) {
+        throw new Error(
+          "Only FULLY_RECEIVED purchase orders can be closed"
+        );
+      }
+  
+      if (purchaseOrder.items.length === 0) {
+        throw new Error(
+          "Cannot close a purchase order without items"
+        );
+      }
+  
+      // Double-check quantities
+      for (const item of purchaseOrder.items) {
+        const ordered =
+          new Prisma.Decimal(
+            item.orderedQuantity
+          );
+  
+        const received =
+          new Prisma.Decimal(
+            item.receivedQuantity
+          );
+  
+        if (received.lessThan(ordered)) {
+          throw new Error(
+            `Material ${item.materialId} has not been fully received`
+          );
+        }
+      }
+  
+      const updatedPO =
+        await tx.purchaseOrder.update({
+          where: {
+            id,
+          },
+          data: {
+            status: "CLOSED",
+          },
+          include: {
+            project: true,
+            supplier: true,
+            items: {
+              include: {
+                material: true,
+              },
+            },
+            materialRequest: true,
+          },
+        });
+  
+      return updatedPO;
+    });
+  }

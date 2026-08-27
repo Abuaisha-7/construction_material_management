@@ -3,7 +3,11 @@ import { Request, Response } from "express";
 import {
   createPurchaseOrder,
   getPurchaseOrders,
-  getPurchaseOrderById
+  getPurchaseOrderById,
+  submitPurchaseOrder,
+  approvePurchaseOrder,
+  cancelPurchaseOrder,
+  closePurchaseOrder,
 } from "../services/purchase-order.service";
 
 import {
@@ -125,6 +129,133 @@ export async function getPurchaseOrderController(
         message:
           error.message ||
           "Purchase order not found"
+      });
+    }
+  }
+
+export async function submitPurchaseOrderController(
+    req: Request,
+    res: Response
+  ) {
+    try {
+      const userId = req.user!.id;
+  
+      const purchaseOrder =
+        await submitPurchaseOrder(
+          req.params.id,
+          userId
+        );
+  
+      return res.status(200).json({
+        success: true,
+        message:
+          "Purchase order submitted for approval successfully",
+        data: purchaseOrder,
+      });
+    } catch (error: any) {
+      console.error(error);
+  
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "Failed to submit purchase order",
+      });
+    }
+  }
+
+export async function approvePurchaseOrderController(
+    req: Request,
+    res: Response
+  ) {
+    try {
+      const userId = req.user!.id;
+  
+      const purchaseOrder =
+        await approvePurchaseOrder(
+          req.params.id,
+          userId
+        );
+  
+      return res.status(200).json({
+        success: true,
+        message:
+          "Purchase order approved successfully",
+        data: purchaseOrder,
+      });
+    } catch (error: any) {
+      console.error(error);
+  
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "Failed to approve purchase order",
+      });
+    }
+  }
+
+export async function cancelPurchaseOrderController(
+    req: Request,
+    res: Response
+  ) {
+    try {
+      const userId = req.user!.id;
+  
+      const { reason } = req.body;
+  
+      const purchaseOrder =
+        await cancelPurchaseOrder(
+          req.params.id,
+          userId,
+          reason
+        );
+  
+      return res.status(200).json({
+        success: true,
+        message:
+          "Purchase order cancelled successfully",
+        data: purchaseOrder,
+      });
+    } catch (error: any) {
+      console.error(error);
+  
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "Failed to cancel purchase order",
+      });
+    }
+  }
+
+export async function closePurchaseOrderController(
+    req: Request,
+    res: Response
+  ) {
+    try {
+      const userId = req.user!.id;
+  
+      const purchaseOrder =
+        await closePurchaseOrder(
+          req.params.id,
+          userId
+        );
+  
+      return res.status(200).json({
+        success: true,
+        message:
+          "Purchase order closed successfully",
+        data: purchaseOrder,
+      });
+    } catch (error: any) {
+      console.error(error);
+  
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "Failed to close purchase order",
       });
     }
   }
