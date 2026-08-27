@@ -67,7 +67,7 @@ router.post(
   requireRole(
     "PROJECT_MANAGER",
     "PROCUREMENT_MANAGER",
-    "SUPER_ADMIN"
+    "ADMIN"
   ),
   startMaterialRequestReviewController
 );
@@ -80,7 +80,7 @@ router.post(
   requireRole(
     "PROJECT_MANAGER",
     "PROCUREMENT_MANAGER",
-    "SUPER_ADMIN"
+    "ADMIN"
   ),
   approveMaterialRequestController
 );
@@ -93,7 +93,7 @@ router.post(
   requireRole(
     "PROJECT_MANAGER",
     "PROCUREMENT_MANAGER",
-    "SUPER_ADMIN"
+    "ADMIN"
   ),
   rejectMaterialRequestController
 );

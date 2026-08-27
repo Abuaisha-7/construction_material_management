@@ -306,24 +306,39 @@ import {
     res: Response
   ) {
     try {
-      const request =
-        await approveMaterialRequest(
-          req.params.id
-        );
+      const { id } = req.params;
   
-      return res.json({
+      const approverId = req.user?.id;
+  
+      if (!approverId) {
+        return res.status(401).json({
+          success: false,
+          message: "Authenticated user ID is missing",
+        });
+      }
+  
+      const { comments } = req.body;
+  
+      const request = await approveMaterialRequest(
+        id,
+        approverId,
+        comments
+      );
+  
+      return res.status(200).json({
         success: true,
         message:
           "Material request approved successfully",
-        data: request
+        data: request,
       });
-  
     } catch (error: any) {
+      console.error(error);
+  
       return res.status(400).json({
         success: false,
         message:
           error.message ||
-          "Failed to approve material request"
+          "Failed to approve material request",
       });
     }
   }

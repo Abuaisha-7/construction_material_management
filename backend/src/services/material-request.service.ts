@@ -3,7 +3,7 @@ import { prisma } from "../config/database";
 import { PrismaClient } from "@prisma/client";
 import { generateRequestNumber } from "../utils/numberGenerator";
 
-const prisma = new PrismaClient();
+const Prisma = new PrismaClient();
 
 interface CreateMaterialRequestInput {
   projectId: string;
@@ -545,54 +545,148 @@ export async function startMaterialRequestReview(
   }
 
   export async function approveMaterialRequest(
-    id: string
+    id: string,
+    approverId: string,
+    comments?: string
   ) {
-    const request =
-      await prisma.materialRequest.findUnique({
-        where: {
-          id
-        },
+    return prisma.$transaction(async (tx) => {
+      // ==================================================
+      // 1. Find material request
+      // ==================================================
   
-        include: {
-          items: true
-        }
-      });
-  
-    if (!request) {
-      throw new Error(
-        "Material request not found"
-      );
-    }
-  
-    // VERY IMPORTANT
-    if (request.status !== "UNDER_REVIEW") {
-      throw new Error(
-        "Only UNDER_REVIEW requests can be approved"
-      );
-    }
-  
-    if (request.items.length === 0) {
-      throw new Error(
-        "Cannot approve a request without items"
-      );
-    }
-  
-    return prisma.materialRequest.update({
-      where: {
-        id
-      },
-  
-      data: {
-        status: "APPROVED"
-      },
-  
-      include: {
-        items: {
+      const request =
+        await tx.materialRequest.findUnique({
+          where: {
+            id,
+          },
           include: {
-            material: true
-          }
+            items: {
+              include: {
+                material: true,
+              },
+            },
+          },
+        });
+  
+      if (!request) {
+        throw new Error(
+          "Material request not found"
+        );
+      }
+  
+      // ==================================================
+      // 2. Only UNDER_REVIEW can be approved
+      // ==================================================
+  
+      if (request.status !== "UNDER_REVIEW") {
+        throw new Error(
+          "Only UNDER_REVIEW requests can be approved"
+        );
+      }
+  
+      // ==================================================
+      // 3. Request must contain items
+      // ==================================================
+  
+      if (request.items.length === 0) {
+        throw new Error(
+          "Cannot approve a request without items"
+        );
+      }
+  
+      // ==================================================
+      // 4. Validate requested quantities
+      // ==================================================
+  
+      for (const item of request.items) {
+        if (
+          item.requestedQuantity
+            .lessThanOrEqualTo(0)
+        ) {
+          throw new Error(
+            `Invalid requested quantity for ${item.material.name}`
+          );
+        }
+  
+        if (!item.material.isActive) {
+          throw new Error(
+            `Material is inactive: ${item.material.name}`
+          );
         }
       }
+  
+      // ==================================================
+      // 5. Approve requested quantities
+      // ==================================================
+  
+      for (const item of request.items) {
+        await tx.materialRequestItem.update({
+          where: {
+            id: item.id,
+          },
+          data: {
+            approvedQuantity:
+              item.requestedQuantity,
+          },
+        });
+      }
+  
+      // ==================================================
+      // 6. Record approval history
+      // ==================================================
+  
+      await tx.materialRequestApproval.create({
+        data: {
+          requestId: request.id,
+          approverId,
+          action: "APPROVED",
+          approvedQuantity: request.items.length,
+          comments:
+            comments ??
+            "Material request approved",
+        },
+      });
+  
+      // ==================================================
+      // 7. Change request status
+      // ==================================================
+  
+      const approvedRequest =
+        await tx.materialRequest.update({
+          where: {
+            id: request.id,
+          },
+          data: {
+            status: "APPROVED",
+          },
+          include: {
+            project: true,
+  
+            requester: true,
+  
+            items: {
+              include: {
+                material: {
+                  include: {
+                    category: true,
+                    unit: true,
+                  },
+                },
+              },
+            },
+  
+            approvals: {
+              include: {
+                approver: true,
+              },
+              orderBy: {
+                actionDate: "desc",
+              },
+            },
+          },
+        });
+  
+      return approvedRequest;
     });
   }
 

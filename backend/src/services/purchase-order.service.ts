@@ -26,29 +26,28 @@ export async function createPurchaseOrder(
   userId: string
 ) {
   return prisma.$transaction(async (tx) => {
-
-    // --------------------------------------------------
+    // ==================================================
     // 1. Validate project
-    // --------------------------------------------------
+    // ==================================================
 
     const project = await tx.project.findUnique({
       where: {
-        id: data.projectId
-      }
+        id: data.projectId,
+      },
     });
 
     if (!project) {
       throw new Error("Project not found");
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // 2. Validate supplier
-    // --------------------------------------------------
+    // ==================================================
 
     const supplier = await tx.supplier.findUnique({
       where: {
-        id: data.supplierId
-      }
+        id: data.supplierId,
+      },
     });
 
     if (!supplier) {
@@ -59,27 +58,27 @@ export async function createPurchaseOrder(
       throw new Error("Supplier is inactive");
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // 3. Validate material request
-    // --------------------------------------------------
+    // ==================================================
 
     const materialRequest =
       await tx.materialRequest.findUnique({
         where: {
-          id: data.materialRequestId
+          id: data.materialRequestId,
         },
         include: {
-          items: true
-        }
+          items: true,
+        },
       });
 
     if (!materialRequest) {
       throw new Error("Material request not found");
     }
 
-    // --------------------------------------------------
-    // 4. Material request must be approved
-    // --------------------------------------------------
+    // ==================================================
+    // 4. Material request must be APPROVED
+    // ==================================================
 
     if (materialRequest.status !== "APPROVED") {
       throw new Error(
@@ -87,93 +86,225 @@ export async function createPurchaseOrder(
       );
     }
 
-    // --------------------------------------------------
-    // 5. Ensure request belongs to project
-    // --------------------------------------------------
+    // ==================================================
+    // 5. Request must belong to project
+    // ==================================================
 
-    if (materialRequest.projectId !== data.projectId) {
+    if (
+      materialRequest.projectId !==
+      data.projectId
+    ) {
       throw new Error(
         "Material request does not belong to the selected project"
       );
     }
 
-    // --------------------------------------------------
-    // 6. Validate items
-    // --------------------------------------------------
+    // ==================================================
+    // 6. Validate PO has items
+    // ==================================================
 
-    const materialIds = data.items.map(
-      item => item.materialId
-    );
-
-    const materials = await tx.material.findMany({
-      where: {
-        id: {
-          in: materialIds
-        },
-        isActive: true
-      }
-    });
-
-    if (materials.length !== materialIds.length) {
+    if (!data.items || data.items.length === 0) {
       throw new Error(
-        "One or more materials are invalid or inactive"
+        "Purchase Order must contain at least one item"
       );
     }
 
-    // --------------------------------------------------
-    // 7. Validate requested quantities
-    // --------------------------------------------------
+    // ==================================================
+    // 7. Prevent duplicate materials
+    // ==================================================
 
-    let subtotal = new Prisma.Decimal(0);
+    const materialIds = data.items.map(
+      (item) => item.materialId
+    );
 
-    const orderItems = data.items.map(item => {
+    const uniqueMaterialIds =
+      new Set(materialIds);
 
-      const quantity =
-        new Prisma.Decimal(item.orderedQuantity);
+    if (
+      uniqueMaterialIds.size !==
+      materialIds.length
+    ) {
+      throw new Error(
+        "The same material cannot appear more than once in a Purchase Order"
+      );
+    }
 
+    // ==================================================
+    // 8. Get materials from database
+    // ==================================================
+
+    const materials =
+      await tx.material.findMany({
+        where: {
+          id: {
+            in: materialIds,
+          },
+        },
+        select: {
+          id: true,
+          materialCode: true,
+          name: true,
+          isActive: true,
+          currentUnitPrice: true,
+          estimatedUnitPrice: true,
+        },
+      });
+
+    const materialMap = new Map(
+      materials.map((material) => [
+        material.id,
+        material,
+      ])
+    );
+
+    // ==================================================
+    // 9. Create approved-request item map
+    // ==================================================
+
+    const requestItemMap = new Map(
+      materialRequest.items.map((item) => [
+        item.materialId,
+        item,
+      ])
+    );
+
+    // ==================================================
+    // 10. Validate each PO item
+    // ==================================================
+
+    for (const item of data.items) {
+      const material =
+        materialMap.get(item.materialId);
+
+      // Material exists
+      if (!material) {
+        throw new Error(
+          `Material not found: ${item.materialId}`
+        );
+      }
+
+      // Material active
+      if (!material.isActive) {
+        throw new Error(
+          `Material is inactive: ${material.materialCode} - ${material.name}`
+        );
+      }
+
+      // Material must be part of approved request
+      const requestItem =
+        requestItemMap.get(item.materialId);
+
+      if (!requestItem) {
+        throw new Error(
+          `Material ${material.materialCode} is not included in the approved material request`
+        );
+      }
+
+      // Quantity
+      const orderedQuantity =
+        new Prisma.Decimal(
+          item.orderedQuantity
+        );
+
+      if (
+        orderedQuantity.lessThanOrEqualTo(0)
+      ) {
+        throw new Error(
+          `Ordered quantity for ${material.materialCode} must be greater than zero`
+        );
+      }
+
+      // Approved quantity
+      const approvedQuantity =
+        new Prisma.Decimal(
+          requestItem.approvedQuantity
+        );
+
+      if (
+        orderedQuantity.greaterThan(
+          approvedQuantity
+        )
+      ) {
+        throw new Error(
+          `Ordered quantity for ${material.materialCode} (${orderedQuantity.toString()}) cannot exceed approved quantity (${approvedQuantity.toString()})`
+        );
+      }
+
+      // Unit price
       const unitPrice =
         new Prisma.Decimal(item.unitPrice);
 
-      const lineTotal =
-        quantity.mul(unitPrice);
+      if (unitPrice.lessThan(0)) {
+        throw new Error(
+          `Unit price for ${material.materialCode} cannot be negative`
+        );
+      }
+    }
 
-      subtotal = subtotal.add(lineTotal);
+    // ==================================================
+    // 11. Calculate subtotal
+    // ==================================================
 
-      return {
-        materialId: item.materialId,
-        orderedQuantity: quantity,
-        unitPrice
-      };
-    });
+    let subtotal =
+      new Prisma.Decimal(0);
 
-    // --------------------------------------------------
-    // 8. Calculate VAT
-    // --------------------------------------------------
+    const orderItems =
+      data.items.map((item) => {
+        const quantity =
+          new Prisma.Decimal(
+            item.orderedQuantity
+          );
+
+        const unitPrice =
+          new Prisma.Decimal(
+            item.unitPrice
+          );
+
+        const lineTotal =
+          quantity.mul(unitPrice);
+
+        subtotal =
+          subtotal.add(lineTotal);
+
+        return {
+          materialId:
+            item.materialId,
+
+          orderedQuantity:
+            quantity,
+
+          unitPrice:
+            unitPrice,
+        };
+      });
+
+    // ==================================================
+    // 12. Calculate VAT
+    // ==================================================
 
     const taxAmount =
       subtotal.mul(VAT_RATE);
 
-    // --------------------------------------------------
-    // 9. Calculate total
-    // --------------------------------------------------
+    // ==================================================
+    // 13. Calculate total
+    // ==================================================
 
     const totalAmount =
       subtotal.add(taxAmount);
 
-    // --------------------------------------------------
-    // 10. Generate PO number
-    // --------------------------------------------------
+    // ==================================================
+    // 14. Generate PO number
+    // ==================================================
 
     const purchaseOrderNumber =
       await generatePurchaseOrderNumber(tx);
 
-    // --------------------------------------------------
-    // 11. Create PO
-    // --------------------------------------------------
+    // ==================================================
+    // 15. Create Purchase Order
+    // ==================================================
 
     const purchaseOrder =
       await tx.purchaseOrder.create({
-
         data: {
           purchaseOrderNumber,
 
@@ -195,6 +326,8 @@ export async function createPurchaseOrder(
           status:
             "DRAFT",
 
+          // IMPORTANT:
+          // These values come from backend calculation.
           subtotal,
 
           taxAmount,
@@ -211,20 +344,31 @@ export async function createPurchaseOrder(
             userId,
 
           items: {
-            create: orderItems
-          }
+            create: orderItems,
+          },
         },
 
         include: {
           project: true,
+
           supplier: true,
+
+          materialRequest: {
+            include: {
+              items: {
+                include: {
+                  material: true,
+                },
+              },
+            },
+          },
+
           items: {
             include: {
-              material: true
-            }
+              material: true,
+            },
           },
-          materialRequest: true
-        }
+        },
       });
 
     return purchaseOrder;
