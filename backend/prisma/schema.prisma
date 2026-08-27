@@ -338,28 +338,29 @@ model StorageLocation {
 }
 
 model MaterialRequest {
-  id            String                    @id @default(uuid()) @db.Char(36)
-  requestNumber String                    @unique(map: "request_number") @map("request_number") @db.VarChar(50)
-  projectId     String                    @map("project_id") @db.Char(36)
-  requestedBy   String                    @map("requested_by") @db.Char(36)
-  buildingId    String?                   @map("building_id") @db.Char(36)
-  zoneId        String?                   @map("zone_id") @db.Char(36)
-  activityId    String?                   @map("activity_id") @db.Char(36)
-  requestDate   DateTime                  @map("request_date") @db.Date
-  requiredDate  DateTime?                 @map("required_date") @db.Date
-  priority      MaterialRequestPriority   @default(NORMAL)
-  purpose       String?                   @db.Text
-  status        MaterialRequestStatus     @default(DRAFT)
-  remarks       String?                   @db.Text
-  createdAt     DateTime                  @default(now()) @map("created_at")
-  updatedAt     DateTime                  @updatedAt @map("updated_at")
-  approvals     MaterialRequestApproval[]
-  items         MaterialRequestItem[]
-  activity      Activity?                 @relation(fields: [activityId], references: [id])
-  building      Building?                 @relation(fields: [buildingId], references: [id])
-  project       Project                   @relation(fields: [projectId], references: [id])
-  requester     User                      @relation("RequestedBy", fields: [requestedBy], references: [id])
-  zone          Zone?                     @relation(fields: [zoneId], references: [id])
+  id             String                    @id @default(uuid()) @db.Char(36)
+  requestNumber  String                    @unique(map: "request_number") @map("request_number") @db.VarChar(50)
+  projectId      String                    @map("project_id") @db.Char(36)
+  requestedBy    String                    @map("requested_by") @db.Char(36)
+  buildingId     String?                   @map("building_id") @db.Char(36)
+  zoneId         String?                   @map("zone_id") @db.Char(36)
+  activityId     String?                   @map("activity_id") @db.Char(36)
+  requestDate    DateTime                  @map("request_date") @db.Date
+  requiredDate   DateTime?                 @map("required_date") @db.Date
+  priority       MaterialRequestPriority   @default(NORMAL)
+  purpose        String?                   @db.Text
+  status         MaterialRequestStatus     @default(DRAFT)
+  remarks        String?                   @db.Text
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  approvals      MaterialRequestApproval[]
+  items          MaterialRequestItem[]
+  activity       Activity?                 @relation(fields: [activityId], references: [id])
+  building       Building?                 @relation(fields: [buildingId], references: [id])
+  project        Project                   @relation(fields: [projectId], references: [id])
+  requester      User                      @relation("RequestedBy", fields: [requestedBy], references: [id])
+  zone           Zone?                     @relation(fields: [zoneId], references: [id])
+  purchaseOrders PurchaseOrder[]
 
   @@index([requestDate], map: "idx_material_requests_date")
   @@index([projectId], map: "idx_material_requests_project")
@@ -406,30 +407,42 @@ model MaterialRequestApproval {
 }
 
 model PurchaseOrder {
-  id                   String              @id @default(uuid()) @db.Char(36)
-  projectId            String              @map("project_id") @db.Char(36)
-  supplierId           String              @map("supplier_id") @db.Char(36)
-  purchaseOrderNumber  String              @unique(map: "purchase_order_number") @map("purchase_order_number") @db.VarChar(50)
-  orderDate            DateTime            @map("order_date") @db.Date
-  expectedDeliveryDate DateTime?           @map("expected_delivery_date") @db.Date
-  status               PurchaseOrderStatus @default(DRAFT)
-  subtotal             Decimal             @default(0.00) @db.Decimal(18, 2)
-  taxAmount            Decimal             @default(0.00) @map("tax_amount") @db.Decimal(18, 2)
-  totalAmount          Decimal             @default(0.00) @map("total_amount") @db.Decimal(18, 2)
-  currency             String              @default("ETB") @db.VarChar(10)
-  remarks              String?             @db.Text
-  createdBy            String?             @map("created_by") @db.Char(36)
-  createdAt            DateTime            @default(now()) @map("created_at")
-  goodsReceived        GoodsReceivedNote[]
-  items                PurchaseOrderItem[]
-  creator              User?               @relation("PurchaseOrderCreatedBy", fields: [createdBy], references: [id])
-  project              Project             @relation(fields: [projectId], references: [id])
-  supplier             Supplier            @relation(fields: [supplierId], references: [id])
+  id         String @id @default(uuid()) @db.Char(36)
+  projectId  String @map("project_id") @db.Char(36)
+  supplierId String @map("supplier_id") @db.Char(36)
+
+  materialRequestId String? @map("material_request_id") @db.Char(36)
+
+  purchaseOrderNumber  String    @unique(map: "purchase_order_number") @map("purchase_order_number") @db.VarChar(50)
+  orderDate            DateTime  @map("order_date") @db.Date
+  expectedDeliveryDate DateTime? @map("expected_delivery_date") @db.Date
+
+  status PurchaseOrderStatus @default(DRAFT)
+
+  subtotal    Decimal @default(0.00) @db.Decimal(18, 2)
+  taxAmount   Decimal @default(0.00) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount Decimal @default(0.00) @db.Decimal(18, 2)
+
+  currency String  @default("ETB") @db.VarChar(10)
+  remarks  String? @db.Text
+
+  createdBy String?  @map("created_by") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  goodsReceived GoodsReceivedNote[]
+  items         PurchaseOrderItem[]
+
+  creator  User?    @relation("PurchaseOrderCreatedBy", fields: [createdBy], references: [id])
+  project  Project  @relation(fields: [projectId], references: [id])
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  materialRequest MaterialRequest? @relation(fields: [materialRequestId], references: [id])
 
   @@index([status])
   @@index([createdBy], map: "purchase_orders_created_by_fkey")
   @@index([projectId], map: "purchase_orders_project_id_fkey")
   @@index([supplierId], map: "purchase_orders_supplier_id_fkey")
+  @@index([materialRequestId], map: "purchase_orders_material_request_id_fkey")
   @@map("purchase_orders")
 }
 
