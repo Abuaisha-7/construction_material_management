@@ -74,3 +74,40 @@ export async function generatePurchaseOrderNumber(
 
   return `PO-${year}-${String(nextNumber).padStart(6, "0")}`;
 }
+
+export async function generateGrnNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const lastGrn = await tx.goodsReceivedNote.findFirst({
+    where: {
+      grnNumber: {
+        startsWith: `GRN-${year}-`,
+      },
+    },
+    orderBy: {
+      grnNumber: "desc",
+    },
+    select: {
+      grnNumber: true,
+    },
+  });
+
+  let sequence = 1;
+
+  if (lastGrn) {
+    const lastSequence = parseInt(
+      lastGrn.grnNumber.split("-")[2],
+      10
+    );
+
+    if (!isNaN(lastSequence)) {
+      sequence = lastSequence + 1;
+    }
+  }
+
+  return `GRN-${year}-${sequence
+    .toString()
+    .padStart(6, "0")}`;
+}
