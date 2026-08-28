@@ -11,6 +11,7 @@ import supplierRoutes from "./routes/supplier.routes";
 import materialRequestRoutes from "./routes/material-request.routes";
 import purchaseOrderRoutes from "./routes/purchase-order.routes";
 import grnRoutes from "./routes/grn.routes";
+import storageLocationRoutes from "./routes/storage-location.routes";
 
 import { env } from "./config/env";
 
@@ -85,6 +86,11 @@ app.use(
 app.use(
   "/api/grns",
   grnRoutes
+);
+
+app.use(
+  "/api/storage-locations",
+  storageLocationRoutes
 );
 
 export default app;

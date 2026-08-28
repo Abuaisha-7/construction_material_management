@@ -50,6 +50,10 @@ const permissions = [
   "inventory:adjust",
 
   "reports:read",
+
+  "storage_locations:read",
+  "storage_locations:create",
+  "storage_locations:update",
 ];
 
 const units = [
