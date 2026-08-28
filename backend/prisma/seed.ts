@@ -54,6 +54,10 @@ const permissions = [
   "storage_locations:read",
   "storage_locations:create",
   "storage_locations:update",
+
+  "warehouses:read",
+  "warehouses:create",
+  "warehouses:update",
 ];
 
 const units = [
