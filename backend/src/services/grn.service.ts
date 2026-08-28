@@ -851,7 +851,7 @@ export async function confirmGrn(
           },
 
           data: {
-            status: "CONFIRMED",
+            status: "ACCEPTED",
             receivedBy: userId,
           },
 

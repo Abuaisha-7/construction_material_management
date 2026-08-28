@@ -57,7 +57,7 @@ router.post(
 
 router.patch(
   "/:id",
-  requirePermission("grn:update"),
+  requirePermission("grn:create"),
   updateGrnController
 );
 
@@ -67,7 +67,7 @@ router.patch(
 
 router.post(
   "/:id/confirm",
-  requirePermission("grn:confirm"),
+  requirePermission("grn:create"),
   confirmGrnController
 );
 
@@ -77,7 +77,7 @@ router.post(
 
 router.post(
   "/:id/reject",
-  requirePermission("grn:reject"),
+  requirePermission("grn:create"),
   rejectGrnController
 );
 
