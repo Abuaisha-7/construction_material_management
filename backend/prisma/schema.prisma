@@ -37,7 +37,9 @@ model User {
   stockAdjustmentsRequested StockAdjustment[]         @relation("AdjustmentRequestedBy")
   stockCountsPerformed      StockCount[]              @relation("StockCountedBy")
   stockCountsVerified       StockCount[]              @relation("StockVerifiedBy")
-  roles                     UserRole[]
+
+  warehousesResponsibleFor Warehouse[] @relation("WarehouseResponsibleUser")
+  roles                    UserRole[]
 
   @@index([status])
   @@map("users")
@@ -293,15 +295,18 @@ model MaterialSupplier {
 }
 
 model Warehouse {
-  id                    String                 @id @default(uuid()) @db.Char(36)
-  projectId             String                 @map("project_id") @db.Char(36)
-  code                  String                 @db.VarChar(50)
-  name                  String                 @db.VarChar(255)
-  type                  String?                @db.VarChar(50)
-  responsibleUserId     String?                @map("responsible_user_id") @db.Char(36)
-  capacityDescription   String?                @map("capacity_description") @db.Text
-  isActive              Boolean                @default(true) @map("is_active")
-  createdAt             DateTime               @default(now()) @map("created_at")
+  id                  String   @id @default(uuid()) @db.Char(36)
+  projectId           String   @map("project_id") @db.Char(36)
+  code                String   @db.VarChar(50)
+  name                String   @db.VarChar(255)
+  type                String?  @db.VarChar(50)
+  responsibleUserId   String?  @map("responsible_user_id") @db.Char(36)
+  capacityDescription String?  @map("capacity_description") @db.Text
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  responsibleUser User? @relation("WarehouseResponsibleUser", fields: [responsibleUserId], references: [id])
+
   inventoryBalances     InventoryBalance[]
   inventoryTransactions InventoryTransaction[]
   materialIssues        MaterialIssue[]
