@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { InspectionDecision, Prisma } from "@prisma/client";
 
 import {prisma} from "../config/database";
 import {
@@ -9,6 +9,7 @@ import {
 
 import {
   generateInspectionNumber,
+  generateQuarantineNumber,
 } from "../utils/numberGenerator";
 
 
@@ -750,27 +751,34 @@ export async function updateInspection(
  */
 
 export async function completeInspection(
-  id: string,
-  data: CompleteInspectionInput
+  inspectionId: string,
+  userId: string,
+  data?: {
+    decision?: InspectionDecision;
+    remarks?: string;
+    correctiveAction?: string;
+  }
 ) {
-
   return prisma.$transaction(async (tx) => {
-
-    // --------------------------------------------------------
-    // 1. Load inspection
-    // --------------------------------------------------------
+    // ==================================================
+    // 1. Get inspection
+    // ==================================================
 
     const inspection =
       await tx.materialInspection.findUnique({
         where: {
-          id,
+          id: inspectionId,
         },
-
         include: {
-          items: true,
-          grn: {
+          grn: true,
+          items: {
             include: {
-              items: true,
+              grnItem: {
+                include: {
+                  material: true,
+                  unit: true,
+                },
+              },
             },
           },
         },
@@ -782,9 +790,17 @@ export async function completeInspection(
       );
     }
 
-    // --------------------------------------------------------
-    // 2. Must be IN_PROGRESS
-    // --------------------------------------------------------
+    // ==================================================
+    // 2. Validate inspection status
+    // ==================================================
+
+    if (
+      inspection.status === "COMPLETED"
+    ) {
+      throw new Error(
+        "Inspection is already completed"
+      );
+    }
 
     if (
       inspection.status !== "IN_PROGRESS"
@@ -794,22 +810,21 @@ export async function completeInspection(
       );
     }
 
-    // --------------------------------------------------------
-    // 3. Must contain items
-    // --------------------------------------------------------
+    // ==================================================
+    // 3. Validate inspection items
+    // ==================================================
 
     if (inspection.items.length === 0) {
       throw new Error(
-        "Cannot complete inspection without items"
+        "Cannot complete inspection without inspection items"
       );
     }
 
-    // --------------------------------------------------------
-    // 4. Validate inspection quantities
-    // --------------------------------------------------------
+    // ==================================================
+    // 4. Validate every inspection item
+    // ==================================================
 
     for (const item of inspection.items) {
-
       const inspected =
         new Prisma.Decimal(
           item.quantityInspected ?? 0
@@ -820,7 +835,7 @@ export async function completeInspection(
           item.quantityAccepted
         );
 
-      const conditionallyAccepted =
+      const conditional =
         new Prisma.Decimal(
           item.quantityConditionallyAccepted
         );
@@ -835,63 +850,248 @@ export async function completeInspection(
           item.quantityRejected
         );
 
-      const resultTotal =
+      // -----------------------------------------------
+      // Quantity must be greater than zero
+      // -----------------------------------------------
+
+      if (inspected.lte(0)) {
+        throw new Error(
+          `Inspection quantity must be greater than zero for material ${item.grnItem.material.name}`
+        );
+      }
+
+      // -----------------------------------------------
+      // No negative quantities
+      // -----------------------------------------------
+
+      if (
+        accepted.lt(0) ||
+        conditional.lt(0) ||
+        quarantined.lt(0) ||
+        rejected.lt(0)
+      ) {
+        throw new Error(
+          `Inspection quantities cannot be negative for material ${item.grnItem.material.name}`
+        );
+      }
+
+      // -----------------------------------------------
+      // Total must equal inspected quantity
+      // -----------------------------------------------
+
+      const total =
         accepted
-          .add(conditionallyAccepted)
+          .add(conditional)
           .add(quarantined)
           .add(rejected);
 
-      if (resultTotal.gt(inspected)) {
+      if (!total.eq(inspected)) {
         throw new Error(
-          `Inspection result quantities exceed inspected quantity for item ${item.id}`
+          `Inspection quantities do not balance for ${item.grnItem.material.name}. ` +
+          `Inspected: ${inspected}, ` +
+          `Accepted: ${accepted}, ` +
+          `Conditional: ${conditional}, ` +
+          `Quarantined: ${quarantined}, ` +
+          `Rejected: ${rejected}, ` +
+          `Total: ${total}`
+        );
+      }
+
+      // -----------------------------------------------
+      // Cannot inspect more than delivered quantity
+      // -----------------------------------------------
+
+      const delivered =
+        new Prisma.Decimal(
+          item.grnItem.deliveredQuantity
+        );
+
+      if (inspected.gt(delivered)) {
+        throw new Error(
+          `Inspected quantity for ${item.grnItem.material.name} ` +
+          `cannot exceed delivered quantity ${delivered}`
+        );
+      }
+
+      // -----------------------------------------------
+      // Accepted cannot exceed inspected
+      // -----------------------------------------------
+
+      if (
+        accepted.gt(inspected) ||
+        conditional.gt(inspected) ||
+        quarantined.gt(inspected) ||
+        rejected.gt(inspected)
+      ) {
+        throw new Error(
+          `Inspection result exceeds inspected quantity for ${item.grnItem.material.name}`
         );
       }
     }
 
-    // --------------------------------------------------------
-    // 5. Validate decision
-    // --------------------------------------------------------
+    // ==================================================
+    // 5. Determine overall decision
+    // ==================================================
 
-    if (!data.decision) {
-      throw new Error(
-        "Inspection decision is required"
-      );
+    let totalAccepted =
+      new Prisma.Decimal(0);
+
+    let totalConditional =
+      new Prisma.Decimal(0);
+
+    let totalQuarantined =
+      new Prisma.Decimal(0);
+
+    let totalRejected =
+      new Prisma.Decimal(0);
+
+    for (const item of inspection.items) {
+      totalAccepted =
+        totalAccepted.add(
+          item.quantityAccepted
+        );
+
+      totalConditional =
+        totalConditional.add(
+          item.quantityConditionallyAccepted
+        );
+
+      totalQuarantined =
+        totalQuarantined.add(
+          item.quantityQuarantined
+        );
+
+      totalRejected =
+        totalRejected.add(
+          item.quantityRejected
+        );
     }
 
-    // --------------------------------------------------------
-    // 6. Update inspection
-    // --------------------------------------------------------
+    let decision:
+      | "ACCEPTED"
+      | "CONDITIONALLY_ACCEPTED"
+      | "PARTIALLY_ACCEPTED"
+      | "REJECTED"
+      | "QUARANTINED";
 
-    const completed =
+    const hasAccepted =
+      totalAccepted.gt(0);
+
+    const hasConditional =
+      totalConditional.gt(0);
+
+    const hasQuarantine =
+      totalQuarantined.gt(0);
+
+    const hasRejected =
+      totalRejected.gt(0);
+
+    const resultTypes = [
+      hasAccepted,
+      hasConditional,
+      hasQuarantine,
+      hasRejected,
+    ].filter(Boolean).length;
+
+    if (resultTypes > 1) {
+      decision = "PARTIALLY_ACCEPTED";
+    } else if (hasAccepted) {
+      decision = "ACCEPTED";
+    } else if (hasConditional) {
+      decision = "CONDITIONALLY_ACCEPTED";
+    } else if (hasQuarantine) {
+      decision = "QUARANTINED";
+    } else {
+      decision = "REJECTED";
+    }
+
+    // ==================================================
+    // 6. Create quarantine records
+    // ==================================================
+
+    for (const item of inspection.items) {
+      const quarantineQuantity =
+        new Prisma.Decimal(
+          item.quantityQuarantined
+        );
+
+      if (quarantineQuantity.lte(0)) {
+        continue;
+      }
+
+      const quarantineNumber =
+        await generateQuarantineNumber(tx);
+
+      await tx.materialQuarantine.create({
+        data: {
+          quarantineNumber,
+
+          projectId:
+            inspection.grn.projectId,
+
+          inspectionId:
+            inspection.id,
+
+          inspectionItemId:
+            item.id,
+
+          grnId:
+            inspection.grnId,
+
+          grnItemId:
+            item.grnItemId,
+
+          materialId:
+            item.grnItem.materialId,
+
+          quantity:
+            quarantineQuantity,
+
+          unitId:
+            item.grnItem.unitId,
+
+          reason:
+            item.remarks ??
+            "Material quarantined during inspection",
+
+          correctiveAction:
+            data?.correctiveAction,
+
+          status:
+            "QUARANTINED",
+
+          createdBy:
+            userId,
+        },
+      });
+    }
+
+    // ==================================================
+    // 7. Update inspection
+    // ==================================================
+
+    const completedInspection =
       await tx.materialInspection.update({
         where: {
-          id,
+          id: inspectionId,
         },
 
         data: {
-          status:
-            "COMPLETED",
+          status: "COMPLETED",
 
-          decision:
-            data.decision,
+          decision,
 
           remarks:
-            data.remarks ??
+            data?.remarks ??
             inspection.remarks,
 
           correctiveAction:
-            data.correctiveAction ??
+            data?.correctiveAction ??
             inspection.correctiveAction,
         },
 
         include: {
-          grn: {
-            include: {
-              supplier: true,
-              project: true,
-              purchaseOrder: true,
-            },
-          },
+          grn: true,
 
           inspector: {
             select: {
@@ -907,7 +1107,6 @@ export async function completeInspection(
                 include: {
                   material: true,
                   unit: true,
-                  storageLocation: true,
                 },
               },
             },
@@ -915,53 +1114,6 @@ export async function completeInspection(
         },
       });
 
-    // --------------------------------------------------------
-    // 7. Update GRN status
-    // --------------------------------------------------------
-
-    let grnStatus:
-      | "PARTIALLY_ACCEPTED"
-      | "ACCEPTED"
-      | "REJECTED";
-
-    switch (data.decision) {
-
-      case "ACCEPTED":
-        grnStatus = "ACCEPTED";
-        break;
-
-      case "PARTIALLY_ACCEPTED":
-        grnStatus = "PARTIALLY_ACCEPTED";
-        break;
-
-      case "CONDITIONALLY_ACCEPTED":
-        grnStatus = "PARTIALLY_ACCEPTED";
-        break;
-
-      case "REJECTED":
-        grnStatus = "REJECTED";
-        break;
-
-      case "QUARANTINED":
-        grnStatus = "REJECTED";
-        break;
-
-      default:
-        throw new Error(
-          "Invalid inspection decision"
-        );
-    }
-
-    await tx.goodsReceivedNote.update({
-      where: {
-        id: inspection.grnId,
-      },
-
-      data: {
-        status: grnStatus,
-      },
-    });
-
-    return completed;
+    return completedInspection;
   });
 }

@@ -149,3 +149,67 @@ export async function generateInspectionNumber(
 
   return `${prefix}${String(nextNumber).padStart(6, "0")}`;
 }
+
+export async function generateQuarantineNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const lastQuarantine =
+    await tx.materialQuarantine.findFirst({
+      where: {
+        quarantineNumber: {
+          startsWith: `QTN-${year}-`,
+        },
+      },
+      orderBy: {
+        quarantineNumber: "desc",
+      },
+      select: {
+        quarantineNumber: true,
+      },
+    });
+
+  let sequence = 1;
+
+  if (lastQuarantine) {
+    const lastSequence = Number(
+      lastQuarantine.quarantineNumber.split("-")[2]
+    );
+
+    if (!Number.isNaN(lastSequence)) {
+      sequence = lastSequence + 1;
+    }
+  }
+
+  return `QTN-${year}-${String(sequence).padStart(6, "0")}`;
+}
+
+export async function generateDispositionNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const last = await tx.materialDisposition.findFirst({
+    where: {
+      dispositionNumber: {
+        startsWith: `MD-${year}-`,
+      },
+    },
+    orderBy: {
+      dispositionNumber: "desc",
+    },
+    select: {
+      dispositionNumber: true,
+    },
+  });
+
+  let sequence = 1;
+
+  if (last) {
+    const parts = last.dispositionNumber.split("-");
+    sequence = Number(parts[2]) + 1;
+  }
+
+  return `MD-${year}-${String(sequence).padStart(6, "0")}`;
+};

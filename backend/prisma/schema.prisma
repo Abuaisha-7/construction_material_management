@@ -37,6 +37,8 @@ model User {
   stockAdjustmentsRequested StockAdjustment[]         @relation("AdjustmentRequestedBy")
   stockCountsPerformed      StockCount[]              @relation("StockCountedBy")
   stockCountsVerified       StockCount[]              @relation("StockVerifiedBy")
+  createdQuarantines        MaterialQuarantine[]      @relation("QuarantineCreatedBy")
+  dispositionsPerformed     MaterialDisposition[]     @relation("DispositionPerformedBy")
 
   warehousesResponsibleFor Warehouse[] @relation("WarehouseResponsibleUser")
   roles                    UserRole[]
@@ -123,6 +125,7 @@ model Project {
   stockCounts           StockCount[]
   Warehouse             Warehouse[]
   zones                 Zone[]
+  quarantines           MaterialQuarantine[]
 
   @@index([status])
   @@index([projectManagerId], map: "projects_project_manager_id_fkey")
@@ -204,13 +207,14 @@ model MaterialCategory {
 }
 
 model Unit {
-  id        String     @id @default(uuid()) @db.Char(36)
-  code      String     @unique(map: "code") @db.VarChar(20)
-  name      String     @db.VarChar(100)
-  symbol    String     @db.VarChar(20)
-  createdAt DateTime   @default(now()) @map("created_at")
-  grnItems  GrnItem[]
-  materials Material[]
+  id          String               @id @default(uuid()) @db.Char(36)
+  code        String               @unique(map: "code") @db.VarChar(20)
+  name        String               @db.VarChar(100)
+  symbol      String               @db.VarChar(20)
+  createdAt   DateTime             @default(now()) @map("created_at")
+  grnItems    GrnItem[]
+  materials   Material[]
+  quarantines MaterialQuarantine[]
 
   @@map("units")
 }
@@ -249,6 +253,7 @@ model Material {
   unit                  Unit                   @relation(fields: [unitId], references: [id])
   purchaseOrderItems    PurchaseOrderItem[]
   stockCountItems       StockCountItem[]
+  quarantines           MaterialQuarantine[]
 
   @@index([isActive])
   @@index([categoryId], map: "idx_materials_category")
@@ -486,6 +491,7 @@ model GoodsReceivedNote {
   supplier           Supplier             @relation(fields: [supplierId], references: [id])
   items              GrnItem[]
   inspections        MaterialInspection[]
+  quarantines        MaterialQuarantine[]
 
   @@index([status])
   @@index([purchaseOrderId], map: "goods_received_notes_purchase_order_id_fkey")
@@ -497,25 +503,26 @@ model GoodsReceivedNote {
 }
 
 model GrnItem {
-  id                String            @id @default(uuid()) @db.Char(36)
-  grnId             String            @map("grn_id") @db.Char(36)
-  materialId        String            @map("material_id") @db.Char(36)
-  orderedQuantity   Decimal?          @map("ordered_quantity") @db.Decimal(18, 3)
-  deliveredQuantity Decimal           @map("delivered_quantity") @db.Decimal(18, 3)
-  damagedQuantity   Decimal           @default(0.000) @map("damaged_quantity") @db.Decimal(18, 3)
-  rejectedQuantity  Decimal           @default(0.000) @map("rejected_quantity") @db.Decimal(18, 3)
-  acceptedQuantity  Decimal           @default(0.000) @map("accepted_quantity") @db.Decimal(18, 3)
-  unitId            String            @map("unit_id") @db.Char(36)
-  batchNumber       String?           @map("batch_number") @db.VarChar(100)
-  manufacturingDate DateTime?         @map("manufacturing_date") @db.Date
-  expiryDate        DateTime?         @map("expiry_date") @db.Date
-  storageLocationId String?           @map("storage_location_id") @db.Char(36)
-  remarks           String?           @db.Text
-  grn               GoodsReceivedNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  material          Material          @relation(fields: [materialId], references: [id])
-  storageLocation   StorageLocation?  @relation(fields: [storageLocationId], references: [id])
-  unit              Unit              @relation(fields: [unitId], references: [id])
+  id                String               @id @default(uuid()) @db.Char(36)
+  grnId             String               @map("grn_id") @db.Char(36)
+  materialId        String               @map("material_id") @db.Char(36)
+  orderedQuantity   Decimal?             @map("ordered_quantity") @db.Decimal(18, 3)
+  deliveredQuantity Decimal              @map("delivered_quantity") @db.Decimal(18, 3)
+  damagedQuantity   Decimal              @default(0.000) @map("damaged_quantity") @db.Decimal(18, 3)
+  rejectedQuantity  Decimal              @default(0.000) @map("rejected_quantity") @db.Decimal(18, 3)
+  acceptedQuantity  Decimal              @default(0.000) @map("accepted_quantity") @db.Decimal(18, 3)
+  unitId            String               @map("unit_id") @db.Char(36)
+  batchNumber       String?              @map("batch_number") @db.VarChar(100)
+  manufacturingDate DateTime?            @map("manufacturing_date") @db.Date
+  expiryDate        DateTime?            @map("expiry_date") @db.Date
+  storageLocationId String?              @map("storage_location_id") @db.Char(36)
+  remarks           String?              @db.Text
+  grn               GoodsReceivedNote    @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  material          Material             @relation(fields: [materialId], references: [id])
+  storageLocation   StorageLocation?     @relation(fields: [storageLocationId], references: [id])
+  unit              Unit                 @relation(fields: [unitId], references: [id])
   inspectionItems   InspectionItem[]
+  quarantines       MaterialQuarantine[]
 
   @@index([grnId], map: "grn_items_grn_id_fkey")
   @@index([materialId], map: "grn_items_material_id_fkey")
@@ -525,19 +532,20 @@ model GrnItem {
 }
 
 model MaterialInspection {
-  id               String              @id @default(uuid()) @db.Char(36)
-  inspectionNumber String              @unique(map: "inspection_number") @map("inspection_number") @db.VarChar(50)
-  grnId            String              @map("grn_id") @db.Char(36)
-  inspectionDate   DateTime            @map("inspection_date") @db.Date
-  inspectorId      String              @map("inspector_id") @db.Char(36)
-  status           InspectionStatus    @default(PENDING)
+  id               String               @id @default(uuid()) @db.Char(36)
+  inspectionNumber String               @unique(map: "inspection_number") @map("inspection_number") @db.VarChar(50)
+  grnId            String               @map("grn_id") @db.Char(36)
+  inspectionDate   DateTime             @map("inspection_date") @db.Date
+  inspectorId      String               @map("inspector_id") @db.Char(36)
+  status           InspectionStatus     @default(PENDING)
   decision         InspectionDecision?
-  remarks          String?             @db.Text
-  correctiveAction String?             @map("corrective_action") @db.Text
-  createdAt        DateTime            @default(now()) @map("created_at")
+  remarks          String?              @db.Text
+  correctiveAction String?              @map("corrective_action") @db.Text
+  createdAt        DateTime             @default(now()) @map("created_at")
   items            InspectionItem[]
-  grn              GoodsReceivedNote   @relation(fields: [grnId], references: [id])
-  inspector        User                @relation("Inspector", fields: [inspectorId], references: [id])
+  quarantines      MaterialQuarantine[]
+  grn              GoodsReceivedNote    @relation(fields: [grnId], references: [id])
+  inspector        User                 @relation("Inspector", fields: [inspectorId], references: [id])
 
   @@index([inspectionDate])
   @@index([grnId], map: "material_inspections_grn_id_fkey")
@@ -546,29 +554,109 @@ model MaterialInspection {
 }
 
 model InspectionItem {
-  id                            String             @id @default(uuid()) @db.Char(36)
-  inspectionId                  String             @map("inspection_id") @db.Char(36)
-  grnItemId                     String             @map("grn_item_id") @db.Char(36)
-  quantityInspected             Decimal?           @map("quantity_inspected") @db.Decimal(18, 3)
-  quantityAccepted              Decimal            @default(0.000) @map("quantity_accepted") @db.Decimal(18, 3)
-  quantityConditionallyAccepted Decimal            @default(0.000) @map("quantity_conditionally_accepted") @db.Decimal(18, 3)
-  quantityQuarantined           Decimal            @default(0.000) @map("quantity_quarantined") @db.Decimal(18, 3)
-  quantityRejected              Decimal            @default(0.000) @map("quantity_rejected") @db.Decimal(18, 3)
-  specification                 String?            @db.Text
-  requiredStandard              String?            @map("required_standard") @db.VarChar(100)
-  certificateNumber             String?            @map("certificate_number") @db.VarChar(100)
-  testRequired                  Boolean            @default(false) @map("test_required")
-  testResult                    String?            @map("test_result") @db.Text
-  remarks                       String?            @db.Text
-  materialId                    String?            @db.Char(36)
-  grnItem                       GrnItem            @relation(fields: [grnItemId], references: [id])
-  inspection                    MaterialInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  material                      Material?          @relation(fields: [materialId], references: [id])
+  id                            String               @id @default(uuid()) @db.Char(36)
+  inspectionId                  String               @map("inspection_id") @db.Char(36)
+  grnItemId                     String               @map("grn_item_id") @db.Char(36)
+  quantityInspected             Decimal?             @map("quantity_inspected") @db.Decimal(18, 3)
+  quantityAccepted              Decimal              @default(0.000) @map("quantity_accepted") @db.Decimal(18, 3)
+  quantityConditionallyAccepted Decimal              @default(0.000) @map("quantity_conditionally_accepted") @db.Decimal(18, 3)
+  quantityQuarantined           Decimal              @default(0.000) @map("quantity_quarantined") @db.Decimal(18, 3)
+  quantityRejected              Decimal              @default(0.000) @map("quantity_rejected") @db.Decimal(18, 3)
+  specification                 String?              @db.Text
+  requiredStandard              String?              @map("required_standard") @db.VarChar(100)
+  certificateNumber             String?              @map("certificate_number") @db.VarChar(100)
+  testRequired                  Boolean              @default(false) @map("test_required")
+  testResult                    String?              @map("test_result") @db.Text
+  remarks                       String?              @db.Text
+  materialId                    String?              @db.Char(36)
+  grnItem                       GrnItem              @relation(fields: [grnItemId], references: [id])
+  inspection                    MaterialInspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  material                      Material?            @relation(fields: [materialId], references: [id])
+  quarantines                   MaterialQuarantine[]
 
   @@index([grnItemId], map: "inspection_items_grn_item_id_fkey")
   @@index([inspectionId], map: "inspection_items_inspection_id_fkey")
   @@index([materialId], map: "inspection_items_materialId_fkey")
   @@map("inspection_items")
+}
+
+model MaterialQuarantine {
+  id               String @id @default(uuid()) @db.Char(36)
+  quarantineNumber String @unique(map: "quarantine_number") @map("quarantine_number") @db.VarChar(50)
+
+  projectId        String @map("project_id") @db.Char(36)
+  inspectionId     String @map("inspection_id") @db.Char(36)
+  inspectionItemId String @map("inspection_item_id") @db.Char(36)
+  grnId            String @map("grn_id") @db.Char(36)
+  grnItemId        String @map("grn_item_id") @db.Char(36)
+  materialId       String @map("material_id") @db.Char(36)
+
+  quantity Decimal @db.Decimal(18, 3)
+  unitId   String  @map("unit_id") @db.Char(36)
+
+  reason           String? @db.Text
+  correctiveAction String? @map("corrective_action") @db.Text
+
+  status QuarantineStatus @default(QUARANTINED)
+
+  quarantinedAt DateTime  @default(now()) @map("quarantined_at")
+  releasedAt    DateTime? @map("released_at")
+  returnedAt    DateTime? @map("returned_at")
+  scrappedAt    DateTime? @map("scrapped_at")
+
+  createdBy String   @map("created_by") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project        Project            @relation(fields: [projectId], references: [id])
+  inspection     MaterialInspection @relation(fields: [inspectionId], references: [id])
+  inspectionItem InspectionItem     @relation(fields: [inspectionItemId], references: [id])
+  grn            GoodsReceivedNote  @relation(fields: [grnId], references: [id])
+  grnItem        GrnItem            @relation(fields: [grnItemId], references: [id])
+  material       Material           @relation(fields: [materialId], references: [id])
+  unit           Unit               @relation(fields: [unitId], references: [id])
+  creator        User               @relation("QuarantineCreatedBy", fields: [createdBy], references: [id])
+
+  dispositions MaterialDisposition[]
+
+  @@index([projectId])
+  @@index([inspectionId])
+  @@index([inspectionItemId])
+  @@index([grnId])
+  @@index([grnItemId])
+  @@index([materialId])
+  @@index([status])
+  @@index([createdBy])
+  @@map("material_quarantines")
+}
+
+model MaterialDisposition {
+  id                String @id @default(uuid()) @db.Char(36)
+  dispositionNumber String @unique(map: "disposition_number") @map("disposition_number") @db.VarChar(50)
+
+  quarantineId String @map("quarantine_id") @db.Char(36)
+
+  action DispositionAction
+
+  quantity Decimal @db.Decimal(18, 3)
+
+  reason  String? @db.Text
+  remarks String? @db.Text
+
+  actionDate DateTime @default(now()) @map("action_date")
+
+  performedBy String @map("performed_by") @db.Char(36)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  quarantine MaterialQuarantine @relation(fields: [quarantineId], references: [id], onDelete: Cascade)
+  performer  User               @relation("DispositionPerformedBy", fields: [performedBy], references: [id])
+
+  @@index([quarantineId])
+  @@index([action])
+  @@index([performedBy])
+  @@index([actionDate])
+  @@map("material_dispositions")
 }
 
 model InventoryBalance {
@@ -996,6 +1084,20 @@ enum InspectionDecision {
   PARTIALLY_ACCEPTED
   REJECTED
   QUARANTINED
+}
+
+enum QuarantineStatus {
+  QUARANTINED
+  RELEASED
+  RETURNED
+  SCRAPPED
+  CANCELLED
+}
+
+enum DispositionAction {
+  RELEASE
+  RETURN
+  SCRAP
 }
 
 enum InventoryTransactionType {
