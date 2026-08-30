@@ -14,6 +14,7 @@ import grnRoutes from "./routes/grn.routes";
 import storageLocationRoutes from "./routes/storage-location.routes";
 import warehouseRoutes from "./routes/warehouse.routes";
 import inspectionRoutes from "./routes/inspection.routes";
+import quarantineRoutes from "./routes/quarantine.routes";
 
 import { env } from "./config/env";
 
@@ -103,6 +104,11 @@ app.use(
 app.use(
   "/api/inspections",
   inspectionRoutes
+);
+
+app.use(
+  "/api/quarantines",
+  quarantineRoutes
 );
 
 export default app;

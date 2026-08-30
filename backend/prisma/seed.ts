@@ -45,6 +45,10 @@ const permissions = [
   "inspections:reject",
   "inspections:update",
 
+  "quarantines:read",
+  "quarantines:create",
+  "quarantines:dispose",
+
   "inventory:read",
   "inventory:receive",
   "inventory:issue",
