@@ -563,7 +563,7 @@ model InspectionItem {
   materialId                    String?            @db.Char(36)
   grnItem                       GrnItem            @relation(fields: [grnItemId], references: [id])
   inspection                    MaterialInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  Material                      Material?          @relation(fields: [materialId], references: [id])
+  material                      Material?          @relation(fields: [materialId], references: [id])
 
   @@index([grnItemId], map: "inspection_items_grn_item_id_fkey")
   @@index([inspectionId], map: "inspection_items_inspection_id_fkey")

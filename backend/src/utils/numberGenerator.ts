@@ -111,3 +111,41 @@ export async function generateGrnNumber(
     .toString()
     .padStart(6, "0")}`;
 }
+
+export async function generateInspectionNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+
+  const year = new Date().getFullYear();
+
+  const prefix = `INS-${year}-`;
+
+  const lastInspection =
+    await tx.materialInspection.findFirst({
+      where: {
+        inspectionNumber: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        inspectionNumber: "desc",
+      },
+      select: {
+        inspectionNumber: true,
+      },
+    });
+
+  let nextNumber = 1;
+
+  if (lastInspection) {
+    const lastNumber = Number(
+      lastInspection.inspectionNumber.replace(prefix, "")
+    );
+
+    if (!Number.isNaN(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
+  }
+
+  return `${prefix}${String(nextNumber).padStart(6, "0")}`;
+}

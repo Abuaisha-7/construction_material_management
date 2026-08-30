@@ -545,7 +545,7 @@ export async function updateGrn(
       }
 
       if (
-        existing.status !== "DRAFT"
+        existing.status !== "ACCEPTED"
       ) {
         throw new Error(
           "Only DRAFT GRNs can be updated"
@@ -577,6 +577,8 @@ export async function updateGrn(
 
           remarks:
             data.remarks,
+          
+
         },
       });
 
@@ -851,7 +853,7 @@ export async function confirmGrn(
           },
 
           data: {
-            status: "ACCEPTED",
+            status: "AWAITING_INSPECTION",
             receivedBy: userId,
           },
 
