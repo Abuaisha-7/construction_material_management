@@ -43,6 +43,7 @@ const permissions = [
   "inspections:create",
   "inspections:approve",
   "inspections:reject",
+  "inspections:update",
 
   "inventory:read",
   "inventory:receive",

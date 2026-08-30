@@ -13,6 +13,7 @@ import purchaseOrderRoutes from "./routes/purchase-order.routes";
 import grnRoutes from "./routes/grn.routes";
 import storageLocationRoutes from "./routes/storage-location.routes";
 import warehouseRoutes from "./routes/warehouse.routes";
+import inspectionRoutes from "./routes/inspection.routes";
 
 import { env } from "./config/env";
 
@@ -97,6 +98,11 @@ app.use(
 app.use(
   "/api/warehouses",
   warehouseRoutes
+);
+
+app.use(
+  "/api/inspections",
+  inspectionRoutes
 );
 
 export default app;
