@@ -19,6 +19,7 @@ import inventoryRoutes from "./routes/inventory.routes";
 import materialIssueRoutes from "./routes/material-issue.routes";
 import buildingRoutes from "./routes/building.routes";
 import zoneRoutes from "./routes/zone.routes";
+import activityRoutes from "./routes/activity.routes";
 
 import { env } from "./config/env";
 
@@ -135,5 +136,7 @@ app.use(
   "/api/zones",
   zoneRoutes
 );
+
+app.use("/api/activities", activityRoutes);
 
 export default app;
