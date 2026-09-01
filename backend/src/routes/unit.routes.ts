@@ -1,5 +1,5 @@
 import { Router } from "express";
-
+import { authenticate } from "../middleware/auth.middleware";
 import {
   createUnit,
   getUnits,
@@ -10,14 +10,14 @@ import {
 
 const router = Router();
 
-router.post("/", createUnit);
+router.post("/", authenticate, createUnit);
 
-router.get("/", getUnits);
+router.get("/", authenticate, getUnits);
 
-router.get("/:id", getUnitById);
+router.get("/:id", authenticate, getUnitById);
 
-router.put("/:id", updateUnit);
+router.put("/:id", authenticate, updateUnit);
 
-router.delete("/:id", deleteUnit);
+router.delete("/:id", authenticate, deleteUnit);
 
 export default router;

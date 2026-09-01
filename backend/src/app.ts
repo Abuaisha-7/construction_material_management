@@ -17,6 +17,7 @@ import inspectionRoutes from "./routes/inspection.routes";
 import quarantineRoutes from "./routes/quarantine.routes";
 import inventoryRoutes from "./routes/inventory.routes";
 import materialIssueRoutes from "./routes/material-issue.routes";
+import buildingRoutes from "./routes/building.routes";
 
 import { env } from "./config/env";
 
@@ -122,6 +123,11 @@ app.use(
 app.use(
   "/api/material-issues",
   materialIssueRoutes
+);
+
+app.use(
+  "/api/buildings",
+  buildingRoutes
 );
 
 export default app;
