@@ -213,3 +213,77 @@ export async function generateDispositionNumber(
 
   return `MD-${year}-${String(sequence).padStart(6, "0")}`;
 };
+
+export async function generateInventoryTransactionNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `TXN-${year}-`;
+
+  const lastTransaction =
+    await tx.inventoryTransaction.findFirst({
+      where: {
+        transactionNumber: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        transactionNumber: "desc",
+      },
+      select: {
+        transactionNumber: true,
+      },
+    });
+
+  let sequence = 1;
+
+  if (lastTransaction) {
+    const lastSequence = Number(
+      lastTransaction.transactionNumber.substring(
+        prefix.length
+      )
+    );
+
+    if (!Number.isNaN(lastSequence)) {
+      sequence = lastSequence + 1;
+    }
+  }
+
+  return `${prefix}${String(sequence).padStart(6, "0")}`;
+}
+
+export async function generateMaterialIssueNumber(
+  tx: Prisma.TransactionClient
+) {
+  const year = new Date().getFullYear();
+
+  const lastIssue =
+    await tx.materialIssue.findFirst({
+      where: {
+        issueNumber: {
+          startsWith: `MI-${year}-`,
+        },
+      },
+      orderBy: {
+        issueNumber: "desc",
+      },
+      select: {
+        issueNumber: true,
+      },
+    });
+
+  let nextNumber = 1;
+
+  if (lastIssue) {
+    const parts =
+      lastIssue.issueNumber.split("-");
+
+    nextNumber =
+      parseInt(parts[2], 10) + 1;
+  }
+
+  return `MI-${year}-${String(nextNumber).padStart(
+    6,
+    "0"
+  )}`;
+}

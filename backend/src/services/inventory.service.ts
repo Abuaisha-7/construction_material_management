@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { generateInventoryTransactionNumber } from "../utils/numberGenerator";
 
 const prisma = new PrismaClient();
 
@@ -68,47 +69,6 @@ function decimal(value: string | number | Prisma.Decimal) {
   return new Prisma.Decimal(value);
 }
 
-// ============================================================
-// TRANSACTION NUMBER
-// ============================================================
-
-async function generateInventoryTransactionNumber(
-  tx: Prisma.TransactionClient
-): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `TXN-${year}-`;
-
-  const lastTransaction =
-    await tx.inventoryTransaction.findFirst({
-      where: {
-        transactionNumber: {
-          startsWith: prefix,
-        },
-      },
-      orderBy: {
-        transactionNumber: "desc",
-      },
-      select: {
-        transactionNumber: true,
-      },
-    });
-
-  let sequence = 1;
-
-  if (lastTransaction) {
-    const lastSequence = Number(
-      lastTransaction.transactionNumber.substring(
-        prefix.length
-      )
-    );
-
-    if (!Number.isNaN(lastSequence)) {
-      sequence = lastSequence + 1;
-    }
-  }
-
-  return `${prefix}${String(sequence).padStart(6, "0")}`;
-}
 
 // ============================================================
 // VALIDATE MATERIAL
