@@ -1,4 +1,4 @@
-import { InspectionDecision, Prisma } from "@prisma/client";
+import { InspectionDecision, Prisma,  } from "@prisma/client";
 
 import {prisma} from "../config/database";
 import {
@@ -11,6 +11,11 @@ import {
   generateInspectionNumber,
   generateQuarantineNumber,
 } from "../utils/numberGenerator";
+
+import {
+  postInventoryReceipt,
+} from "./inventory.service";
+
 
 
 /**
@@ -754,366 +759,687 @@ export async function completeInspection(
   inspectionId: string,
   userId: string,
   data?: {
-    decision?: InspectionDecision;
-    remarks?: string;
-    correctiveAction?: string;
-  }
-) {
-  return prisma.$transaction(async (tx) => {
-    // ==================================================
-    // 1. Get inspection
-    // ==================================================
-
-    const inspection =
-      await tx.materialInspection.findUnique({
-        where: {
-          id: inspectionId,
-        },
-        include: {
-          grn: true,
-          items: {
-            include: {
-              grnItem: {
-                include: {
-                  material: true,
-                  unit: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-    if (!inspection) {
-      throw new Error(
-        "Material inspection not found"
-      );
-    }
-
-    // ==================================================
-    // 2. Validate inspection status
-    // ==================================================
-
-    if (
-      inspection.status === "COMPLETED"
-    ) {
-      throw new Error(
-        "Inspection is already completed"
-      );
-    }
-
-    if (
-      inspection.status !== "IN_PROGRESS"
-    ) {
-      throw new Error(
-        "Only IN_PROGRESS inspections can be completed"
-      );
-    }
-
-    // ==================================================
-    // 3. Validate inspection items
-    // ==================================================
-
-    if (inspection.items.length === 0) {
-      throw new Error(
-        "Cannot complete inspection without inspection items"
-      );
-    }
-
-    // ==================================================
-    // 4. Validate every inspection item
-    // ==================================================
-
-    for (const item of inspection.items) {
-      const inspected =
-        new Prisma.Decimal(
-          item.quantityInspected ?? 0
-        );
-
-      const accepted =
-        new Prisma.Decimal(
-          item.quantityAccepted
-        );
-
-      const conditional =
-        new Prisma.Decimal(
-          item.quantityConditionallyAccepted
-        );
-
-      const quarantined =
-        new Prisma.Decimal(
-          item.quantityQuarantined
-        );
-
-      const rejected =
-        new Prisma.Decimal(
-          item.quantityRejected
-        );
-
-      // -----------------------------------------------
-      // Quantity must be greater than zero
-      // -----------------------------------------------
-
-      if (inspected.lte(0)) {
-        throw new Error(
-          `Inspection quantity must be greater than zero for material ${item.grnItem.material.name}`
-        );
-      }
-
-      // -----------------------------------------------
-      // No negative quantities
-      // -----------------------------------------------
-
-      if (
-        accepted.lt(0) ||
-        conditional.lt(0) ||
-        quarantined.lt(0) ||
-        rejected.lt(0)
-      ) {
-        throw new Error(
-          `Inspection quantities cannot be negative for material ${item.grnItem.material.name}`
-        );
-      }
-
-      // -----------------------------------------------
-      // Total must equal inspected quantity
-      // -----------------------------------------------
-
-      const total =
-        accepted
-          .add(conditional)
-          .add(quarantined)
-          .add(rejected);
-
-      if (!total.eq(inspected)) {
-        throw new Error(
-          `Inspection quantities do not balance for ${item.grnItem.material.name}. ` +
-          `Inspected: ${inspected}, ` +
-          `Accepted: ${accepted}, ` +
-          `Conditional: ${conditional}, ` +
-          `Quarantined: ${quarantined}, ` +
-          `Rejected: ${rejected}, ` +
-          `Total: ${total}`
-        );
-      }
-
-      // -----------------------------------------------
-      // Cannot inspect more than delivered quantity
-      // -----------------------------------------------
-
-      const delivered =
-        new Prisma.Decimal(
-          item.grnItem.deliveredQuantity
-        );
-
-      if (inspected.gt(delivered)) {
-        throw new Error(
-          `Inspected quantity for ${item.grnItem.material.name} ` +
-          `cannot exceed delivered quantity ${delivered}`
-        );
-      }
-
-      // -----------------------------------------------
-      // Accepted cannot exceed inspected
-      // -----------------------------------------------
-
-      if (
-        accepted.gt(inspected) ||
-        conditional.gt(inspected) ||
-        quarantined.gt(inspected) ||
-        rejected.gt(inspected)
-      ) {
-        throw new Error(
-          `Inspection result exceeds inspected quantity for ${item.grnItem.material.name}`
-        );
-      }
-    }
-
-    // ==================================================
-    // 5. Determine overall decision
-    // ==================================================
-
-    let totalAccepted =
-      new Prisma.Decimal(0);
-
-    let totalConditional =
-      new Prisma.Decimal(0);
-
-    let totalQuarantined =
-      new Prisma.Decimal(0);
-
-    let totalRejected =
-      new Prisma.Decimal(0);
-
-    for (const item of inspection.items) {
-      totalAccepted =
-        totalAccepted.add(
-          item.quantityAccepted
-        );
-
-      totalConditional =
-        totalConditional.add(
-          item.quantityConditionallyAccepted
-        );
-
-      totalQuarantined =
-        totalQuarantined.add(
-          item.quantityQuarantined
-        );
-
-      totalRejected =
-        totalRejected.add(
-          item.quantityRejected
-        );
-    }
-
-    let decision:
+    decision?: 
       | "ACCEPTED"
       | "CONDITIONALLY_ACCEPTED"
       | "PARTIALLY_ACCEPTED"
       | "REJECTED"
       | "QUARANTINED";
+    remarks?: string;
+    correctiveAction?: string;
+  }
+) {
+  return prisma.$transaction(
+    async (tx) => {
 
-    const hasAccepted =
-      totalAccepted.gt(0);
+      // ==================================================
+      // 1. LOAD INSPECTION
+      // ==================================================
 
-    const hasConditional =
-      totalConditional.gt(0);
-
-    const hasQuarantine =
-      totalQuarantined.gt(0);
-
-    const hasRejected =
-      totalRejected.gt(0);
-
-    const resultTypes = [
-      hasAccepted,
-      hasConditional,
-      hasQuarantine,
-      hasRejected,
-    ].filter(Boolean).length;
-
-    if (resultTypes > 1) {
-      decision = "PARTIALLY_ACCEPTED";
-    } else if (hasAccepted) {
-      decision = "ACCEPTED";
-    } else if (hasConditional) {
-      decision = "CONDITIONALLY_ACCEPTED";
-    } else if (hasQuarantine) {
-      decision = "QUARANTINED";
-    } else {
-      decision = "REJECTED";
-    }
-
-    // ==================================================
-    // 6. Create quarantine records
-    // ==================================================
-
-    for (const item of inspection.items) {
-      const quarantineQuantity =
-        new Prisma.Decimal(
-          item.quantityQuarantined
-        );
-
-      if (quarantineQuantity.lte(0)) {
-        continue;
-      }
-
-      const quarantineNumber =
-        await generateQuarantineNumber(tx);
-
-      await tx.materialQuarantine.create({
-        data: {
-          quarantineNumber,
-
-          projectId:
-            inspection.grn.projectId,
-
-          inspectionId:
-            inspection.id,
-
-          inspectionItemId:
-            item.id,
-
-          grnId:
-            inspection.grnId,
-
-          grnItemId:
-            item.grnItemId,
-
-          materialId:
-            item.grnItem.materialId,
-
-          quantity:
-            quarantineQuantity,
-
-          unitId:
-            item.grnItem.unitId,
-
-          reason:
-            item.remarks ??
-            "Material quarantined during inspection",
-
-          correctiveAction:
-            data?.correctiveAction,
-
-          status:
-            "QUARANTINED",
-
-          createdBy:
-            userId,
-        },
-      });
-    }
-
-    // ==================================================
-    // 7. Update inspection
-    // ==================================================
-
-    const completedInspection =
-      await tx.materialInspection.update({
-        where: {
-          id: inspectionId,
-        },
-
-        data: {
-          status: "COMPLETED",
-
-          decision,
-
-          remarks:
-            data?.remarks ??
-            inspection.remarks,
-
-          correctiveAction:
-            data?.correctiveAction ??
-            inspection.correctiveAction,
-        },
-
-        include: {
-          grn: true,
-
-          inspector: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
+      const inspection =
+        await tx.materialInspection.findUnique({
+          where: {
+            id: inspectionId,
           },
 
-          items: {
-            include: {
-              grnItem: {
-                include: {
-                  material: true,
-                  unit: true,
+          include: {
+            grn: {
+              include: {
+                purchaseOrder: true,
+              },
+            },
+
+            items: {
+              include: {
+                grnItem: {
+                  include: {
+                    material: true,
+                    unit: true,
+
+                    storageLocation: {
+                      include: {
+                        warehouse: true,
+                      },
+                    },
+                  },
                 },
               },
             },
           },
+        });
+
+      if (!inspection) {
+        throw new Error(
+          "Material inspection not found"
+        );
+      }
+
+      // ==================================================
+      // 2. VALIDATE INSPECTION STATUS
+      // ==================================================
+
+      if (inspection.status === "COMPLETED") {
+        throw new Error(
+          "Inspection is already completed"
+        );
+      }
+
+      if (
+        inspection.status !== "IN_PROGRESS" &&
+        inspection.status !== "PENDING"
+      ) {
+        throw new Error(
+          `Inspection cannot be completed from status ${inspection.status}`
+        );
+      }
+
+      // ==================================================
+      // 3. VALIDATE INSPECTION ITEMS
+      // ==================================================
+
+      if (inspection.items.length === 0) {
+        throw new Error(
+          "Cannot complete inspection without inspection items"
+        );
+      }
+
+      // ==================================================
+      // 4. VALIDATE INSPECTOR
+      // ==================================================
+
+      const inspector =
+        await tx.user.findUnique({
+          where: {
+            id: inspection.inspectorId,
+          },
+
+          select: {
+            id: true,
+            status: true,
+          },
+        });
+
+      if (!inspector) {
+        throw new Error(
+          "Inspection inspector not found"
+        );
+      }
+
+      // ==================================================
+      // 5. INITIALIZE TOTALS
+      // ==================================================
+
+      let totalAccepted =
+        new Prisma.Decimal(0);
+
+      let totalConditional =
+        new Prisma.Decimal(0);
+
+      let totalQuarantined =
+        new Prisma.Decimal(0);
+
+      let totalRejected =
+        new Prisma.Decimal(0);
+
+      // ==================================================
+      // 6. VALIDATE EVERY INSPECTION ITEM
+      // ==================================================
+
+      for (const item of inspection.items) {
+
+        const inspected =
+          new Prisma.Decimal(
+            item.quantityInspected ?? 0
+          );
+
+        const accepted =
+          new Prisma.Decimal(
+            item.quantityAccepted ?? 0
+          );
+
+        const conditional =
+          new Prisma.Decimal(
+            item.quantityConditionallyAccepted ?? 0
+          );
+
+        const quarantined =
+          new Prisma.Decimal(
+            item.quantityQuarantined ?? 0
+          );
+
+        const rejected =
+          new Prisma.Decimal(
+            item.quantityRejected ?? 0
+          );
+
+        const materialName =
+          item.grnItem.material.name;
+
+        // --------------------------------------------------
+        // Inspection quantity must be greater than zero
+        // --------------------------------------------------
+
+        if (inspected.lte(0)) {
+          throw new Error(
+            `Inspection quantity must be greater than zero for material ${materialName}`
+          );
+        }
+
+        // --------------------------------------------------
+        // No negative quantities
+        // --------------------------------------------------
+
+        if (
+          accepted.lt(0) ||
+          conditional.lt(0) ||
+          quarantined.lt(0) ||
+          rejected.lt(0)
+        ) {
+          throw new Error(
+            `Inspection quantities cannot be negative for material ${materialName}`
+          );
+        }
+
+        // --------------------------------------------------
+        // Total decision quantity
+        // must equal inspected quantity
+        // --------------------------------------------------
+
+        const totalDecisionQuantity =
+          accepted
+            .add(conditional)
+            .add(quarantined)
+            .add(rejected);
+
+        if (!totalDecisionQuantity.eq(inspected)) {
+          throw new Error(
+            `Inspection quantities do not balance for ${materialName}. ` +
+            `Inspected: ${inspected}, ` +
+            `Accepted: ${accepted}, ` +
+            `Conditional: ${conditional}, ` +
+            `Quarantined: ${quarantined}, ` +
+            `Rejected: ${rejected}, ` +
+            `Total: ${totalDecisionQuantity}`
+          );
+        }
+
+        // --------------------------------------------------
+        // Cannot inspect more than delivered quantity
+        // --------------------------------------------------
+
+        const delivered =
+          new Prisma.Decimal(
+            item.grnItem.deliveredQuantity
+          );
+
+        if (inspected.gt(delivered)) {
+          throw new Error(
+            `Inspected quantity for ${materialName} ` +
+            `cannot exceed delivered quantity ${delivered}`
+          );
+        }
+
+        // --------------------------------------------------
+        // Individual results cannot exceed inspected
+        // --------------------------------------------------
+
+        if (
+          accepted.gt(inspected) ||
+          conditional.gt(inspected) ||
+          quarantined.gt(inspected) ||
+          rejected.gt(inspected)
+        ) {
+          throw new Error(
+            `Inspection result exceeds inspected quantity for ${materialName}`
+          );
+        }
+
+        // --------------------------------------------------
+        // Add to overall totals
+        // --------------------------------------------------
+
+        totalAccepted =
+          totalAccepted.add(accepted);
+
+        totalConditional =
+          totalConditional.add(conditional);
+
+        totalQuarantined =
+          totalQuarantined.add(quarantined);
+
+        totalRejected =
+          totalRejected.add(rejected);
+      }
+
+      // ==================================================
+      // 7. DETERMINE INSPECTION DECISION
+      // ==================================================
+
+      let decision:
+        | "ACCEPTED"
+        | "CONDITIONALLY_ACCEPTED"
+        | "PARTIALLY_ACCEPTED"
+        | "REJECTED"
+        | "QUARANTINED";
+
+      const hasAccepted =
+        totalAccepted.gt(0);
+
+      const hasConditional =
+        totalConditional.gt(0);
+
+      const hasQuarantine =
+        totalQuarantined.gt(0);
+
+      const hasRejected =
+        totalRejected.gt(0);
+
+      const resultTypes = [
+        hasAccepted,
+        hasConditional,
+        hasQuarantine,
+        hasRejected,
+      ].filter(Boolean).length;
+
+      if (resultTypes > 1) {
+        decision = "PARTIALLY_ACCEPTED";
+
+      } else if (hasAccepted) {
+        decision = "ACCEPTED";
+
+      } else if (hasConditional) {
+        decision = "CONDITIONALLY_ACCEPTED";
+
+      } else if (hasQuarantine) {
+        decision = "QUARANTINED";
+
+      } else {
+        decision = "REJECTED";
+      }
+
+      // ==================================================
+      // 8. CREATE QUARANTINE RECORDS
+      // ==================================================
+
+      for (const item of inspection.items) {
+
+        const quarantineQuantity =
+          new Prisma.Decimal(
+            item.quantityQuarantined ?? 0
+          );
+
+        if (quarantineQuantity.lte(0)) {
+          continue;
+        }
+
+        const quarantineNumber =
+          await generateQuarantineNumber(tx);
+
+        await tx.materialQuarantine.create({
+          data: {
+            quarantineNumber,
+
+            projectId:
+              inspection.grn.projectId,
+
+            inspectionId:
+              inspection.id,
+
+            inspectionItemId:
+              item.id,
+
+            grnId:
+              inspection.grnId,
+
+            grnItemId:
+              item.grnItemId,
+
+            materialId:
+              item.grnItem.materialId,
+
+            quantity:
+              quarantineQuantity,
+
+            unitId:
+              item.grnItem.unitId,
+
+            reason:
+              item.remarks ??
+              "Material quarantined during inspection",
+
+            correctiveAction:
+              data?.correctiveAction,
+
+            status:
+              "QUARANTINED",
+
+            createdBy:
+              userId,
+          },
+        });
+      }
+
+      // ==================================================
+      // 9. POST ACCEPTED MATERIAL INTO INVENTORY
+      // ==================================================
+
+      for (const item of inspection.items) {
+
+        const acceptedQuantity =
+          new Prisma.Decimal(
+            item.quantityAccepted ?? 0
+          );
+
+        // Nothing accepted -> nothing enters inventory
+        if (acceptedQuantity.lte(0)) {
+          continue;
+        }
+
+        const grnItem =
+          item.grnItem;
+
+        // --------------------------------------------------
+        // Storage location is required
+        // --------------------------------------------------
+
+        if (!grnItem.storageLocationId) {
+          throw new Error(
+            `Storage location is required for accepted material: ${grnItem.material.name}`
+          );
+        }
+
+        const storageLocation =
+          grnItem.storageLocation;
+
+        if (!storageLocation) {
+          throw new Error(
+            `Storage location not found for GRN item ${grnItem.id}`
+          );
+        }
+
+        if (!storageLocation.warehouse) {
+          throw new Error(
+            `Warehouse not found for storage location ${storageLocation.id}`
+          );
+        }
+
+        // --------------------------------------------------
+        // Determine unit cost
+        // --------------------------------------------------
+
+        let unitCost =
+          new Prisma.Decimal(0);
+
+        if (
+          inspection.grn.purchaseOrder &&
+          grnItem.materialId
+        ) {
+
+          const poItem =
+            await tx.purchaseOrderItem.findFirst({
+              where: {
+                purchaseOrderId:
+                  inspection.grn.purchaseOrder.id,
+
+                materialId:
+                  grnItem.materialId,
+              },
+
+              select: {
+                unitPrice: true,
+              },
+            });
+
+          if (poItem) {
+            unitCost =
+              new Prisma.Decimal(
+                poItem.unitPrice
+              );
+          }
+        }
+
+        // --------------------------------------------------
+        // Post inventory receipt
+        // --------------------------------------------------
+
+        await postInventoryReceipt(tx, {
+          projectId:
+            inspection.grn.projectId,
+
+          materialId:
+            grnItem.materialId,
+
+          warehouseId:
+            storageLocation.warehouseId,
+
+          storageLocationId:
+            grnItem.storageLocationId,
+
+          quantity:
+            acceptedQuantity,
+
+          unitCost,
+
+          referenceType:
+            "GRN",
+
+          referenceId:
+            inspection.grnId,
+
+          performedBy:
+            userId,
+
+          reason:
+            `Accepted material from inspection ${inspection.inspectionNumber}`,
+        });
+      }
+
+      // ==================================================
+      // 10. UPDATE INSPECTION
+      // ==================================================
+
+      const updatedInspection =
+        await tx.materialInspection.update({
+          where: {
+            id: inspectionId,
+          },
+
+          data: {
+            status: "COMPLETED",
+
+            decision,
+
+            remarks:
+              data?.remarks ??
+              inspection.remarks,
+
+            correctiveAction:
+              data?.correctiveAction ??
+              inspection.correctiveAction,
+          },
+
+          include: {
+            items: {
+              include: {
+                grnItem: {
+                  include: {
+                    material: true,
+                    unit: true,
+
+                    storageLocation: {
+                      include: {
+                        warehouse: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+
+            inspector: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+              },
+            },
+
+            grn: true,
+          },
+        });
+
+      // ==================================================
+      // 11. UPDATE GRN STATUS
+      // ==================================================
+
+      let grnStatus:
+        | "ACCEPTED"
+        | "PARTIALLY_ACCEPTED"
+        | "REJECTED"
+        | "POSTED";
+
+      if (decision === "ACCEPTED") {
+
+        grnStatus = "ACCEPTED";
+
+      } else if (
+        decision === "PARTIALLY_ACCEPTED" ||
+        decision === "CONDITIONALLY_ACCEPTED"
+      ) {
+
+        grnStatus = "PARTIALLY_ACCEPTED";
+
+      } else if (
+        decision === "REJECTED" ||
+        decision === "QUARANTINED"
+      ) {
+
+        grnStatus = "REJECTED";
+
+      } else {
+
+        grnStatus = "POSTED";
+      }
+
+      await tx.goodsReceivedNote.update({
+        where: {
+          id: inspection.grnId,
+        },
+
+        data: {
+          status: grnStatus,
         },
       });
 
-    return completedInspection;
-  });
+      // ==================================================
+      // 12. UPDATE PURCHASE ORDER RECEIVING STATUS
+      // ==================================================
+
+      if (inspection.grn.purchaseOrderId) {
+
+        const purchaseOrder =
+          await tx.purchaseOrder.findUnique({
+            where: {
+              id:
+                inspection.grn.purchaseOrderId,
+            },
+
+            include: {
+              items: true,
+
+              goodsReceived: {
+                where: {
+                  status: {
+                    in: [
+                      "ACCEPTED",
+                      "PARTIALLY_ACCEPTED",
+                      "POSTED",
+                    ],
+                  },
+                },
+
+                include: {
+                  items: true,
+                },
+              },
+            },
+          });
+
+        if (purchaseOrder) {
+
+          let fullyReceived = true;
+
+          for (
+            const poItem of purchaseOrder.items
+          ) {
+
+            const received =
+              purchaseOrder.goodsReceived.reduce(
+                (
+                  total,
+                  grn
+                ) => {
+
+                  return total.add(
+                    grn.items
+                      .filter(
+                        item =>
+                          item.materialId ===
+                          poItem.materialId
+                      )
+                      .reduce(
+                        (
+                          itemTotal,
+                          item
+                        ) =>
+                          itemTotal.add(
+                            item.acceptedQuantity ?? 0
+                          ),
+
+                        new Prisma.Decimal(0)
+                      )
+                  );
+                },
+
+                new Prisma.Decimal(0)
+              );
+
+            if (
+              received.lt(
+                poItem.orderedQuantity
+              )
+            ) {
+              fullyReceived = false;
+              break;
+            }
+          }
+
+          await tx.purchaseOrder.update({
+            where: {
+              id:
+                purchaseOrder.id,
+            },
+
+            data: {
+              status:
+                fullyReceived
+                  ? "FULLY_RECEIVED"
+                  : "PARTIALLY_RECEIVED",
+            },
+          });
+        }
+      }
+
+      // ==================================================
+      // 13. RETURN
+      // ==================================================
+
+      return updatedInspection;
+    },
+
+    {
+      isolationLevel:
+        Prisma.TransactionIsolationLevel.Serializable,
+    }
+  );
 }
