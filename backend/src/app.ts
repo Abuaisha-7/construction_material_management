@@ -18,6 +18,7 @@ import quarantineRoutes from "./routes/quarantine.routes";
 import inventoryRoutes from "./routes/inventory.routes";
 import materialIssueRoutes from "./routes/material-issue.routes";
 import buildingRoutes from "./routes/building.routes";
+import zoneRoutes from "./routes/zone.routes";
 
 import { env } from "./config/env";
 
@@ -128,6 +129,11 @@ app.use(
 app.use(
   "/api/buildings",
   buildingRoutes
+);
+
+app.use(
+  "/api/zones",
+  zoneRoutes
 );
 
 export default app;
