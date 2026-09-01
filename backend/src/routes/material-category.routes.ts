@@ -1,5 +1,5 @@
 import { Router } from "express";
-
+import { authenticate } from "../middleware/auth.middleware";
 import {
   createCategory,
   getCategories,
@@ -10,14 +10,14 @@ import {
 
 const router = Router();
 
-router.post("/", createCategory);
+router.post("/", authenticate, createCategory);
 
-router.get("/", getCategories);
+router.get("/", authenticate, getCategories);
 
-router.get("/:id", getCategoryById);
+router.get("/:id", authenticate, getCategoryById);
 
-router.put("/:id", updateCategory);
+router.put("/:id", authenticate, updateCategory);
 
-router.delete("/:id", deleteCategory);
+router.delete("/:id", authenticate, deleteCategory);
 
 export default router;
