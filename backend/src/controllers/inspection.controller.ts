@@ -30,7 +30,7 @@ export async function createInspectionController(
 
   try {
 
-    const userId = req.user?.id;
+    const userId =(req as any).user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -141,7 +141,7 @@ export async function getInspectionByIdController(
 
     const inspection =
       await getInspectionById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.json({
@@ -177,7 +177,7 @@ export async function startInspectionController(
 
     const inspection =
       await startInspection(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.json({
@@ -220,7 +220,7 @@ export async function updateInspectionController(
 
     const inspection =
       await updateInspection(
-        req.params.id,
+        (req as any).params.id,
         data
       );
 
@@ -250,25 +250,61 @@ export async function updateInspectionController(
  * ============================================================
  */
 
+
 export async function completeInspectionController(
   req: Request,
   res: Response
 ) {
-
   try {
+    // ==================================================
+    // 1. Get authenticated user
+    // ==================================================
+
+    const userId = (req as any).user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user not found",
+      });
+    }
+
+    // ==================================================
+    // 2. Get inspection ID
+    // ==================================================
+
+    const { id } = (req as any).params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Inspection ID is required",
+      });
+    }
+
+    // ==================================================
+    // 3. Validate request body
+    // ==================================================
 
     const data =
-      completeInspectionSchema.parse(
-        req.body
-      );
+      completeInspectionSchema.parse(req.body);
+
+    // ==================================================
+    // 4. Complete inspection
+    // ==================================================
 
     const inspection =
       await completeInspection(
-        req.params.id,
+        id,
+        userId,
         data
       );
 
-    return res.json({
+    // ==================================================
+    // 5. Return response
+    // ==================================================
+
+    return res.status(200).json({
       success: true,
       message:
         "Material inspection completed successfully",
@@ -277,11 +313,16 @@ export async function completeInspectionController(
 
   } catch (error: any) {
 
+    console.error(
+      "Complete material inspection error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message:
         error.message ||
-        "Failed to complete inspection",
+        "Failed to complete material inspection",
     });
   }
 }

@@ -8,7 +8,7 @@ import {
     CreateQuarantineInput,
     UpdateQuarantineInput,
   } from "../schemas/quarantine.schema";
-import { generateDispositionNumber } from "../utils/numberGenerator";
+import { generateDispositionNumber, generateQuarantineNumber } from "../utils/numberGenerator";
 
 export async function createQuarantine(
     data: CreateQuarantineInput,

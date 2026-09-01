@@ -2,6 +2,8 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+type PrismaTransaction = PrismaClient | Prisma.TransactionClient;
+
 // ============================================================
 // TYPES
 // ============================================================
@@ -45,7 +47,20 @@ export interface CreateAdjustmentInput {
   reason: string;
 }
 
-// ============================================================
+interface PostInventoryReceiptInput { 
+  projectId: string; 
+  materialId: string; 
+  warehouseId: string; 
+  storageLocationId?: string | null; 
+  quantity: Prisma.Decimal | string | number; 
+  unitCost?: Prisma.Decimal | string | number | null; 
+  referenceType?: string; 
+  referenceId?: string; 
+  performedBy?: string | null; 
+  reason?: string | null; 
+}
+
+// ==================================z==========================
 // HELPERS
 // ============================================================
 
@@ -61,7 +76,7 @@ async function generateInventoryTransactionNumber(
   tx: Prisma.TransactionClient
 ): Promise<string> {
   const year = new Date().getFullYear();
-  const prefix = `INV-${year}-`;
+  const prefix = `TXN-${year}-`;
 
   const lastTransaction =
     await tx.inventoryTransaction.findFirst({
@@ -899,3 +914,263 @@ export async function createInventoryAdjustment(
     );
   });
 }
+
+// ============================================================
+// Post an accepted quantity into inventory
+// ============================================================
+
+
+export async function postInventoryReceipt(
+  tx: PrismaTransaction,
+  data: PostInventoryReceiptInput
+) {
+  const quantity = new Prisma.Decimal(data.quantity);
+
+  if (quantity.lte(0)) {
+    throw new Error("Inventory receipt quantity must be greater than zero");
+  }
+
+  // --------------------------------------------------
+  // 1. Validate project
+  // --------------------------------------------------
+
+  const project = await tx.project.findUnique({
+    where: {
+      id: data.projectId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!project) {
+    throw new Error("Project not found");
+  }
+
+  // --------------------------------------------------
+  // 2. Validate material
+  // --------------------------------------------------
+
+  const material = await tx.material.findUnique({
+    where: {
+      id: data.materialId,
+    },
+    select: {
+      id: true,
+      materialCode: true,
+      name: true,
+      isActive: true,
+      currentUnitPrice: true,
+    },
+  });
+
+  if (!material) {
+    throw new Error(`Material not found: ${data.materialId}`);
+  }
+
+  if (!material.isActive) {
+    throw new Error(
+      `Material is inactive: ${material.materialCode} - ${material.name}`
+    );
+  }
+
+  // --------------------------------------------------
+  // 3. Validate warehouse
+  // --------------------------------------------------
+
+  const warehouse = await tx.warehouse.findUnique({
+    where: {
+      id: data.warehouseId,
+    },
+    select: {
+      id: true,
+      projectId: true,
+      isActive: true,
+    },
+  });
+
+  if (!warehouse) {
+    throw new Error("Warehouse not found");
+  }
+
+  if (!warehouse.isActive) {
+    throw new Error("Warehouse is inactive");
+  }
+
+  if (warehouse.projectId !== data.projectId) {
+    throw new Error(
+      "Warehouse does not belong to the selected project"
+    );
+  }
+
+  // --------------------------------------------------
+  // 4. Validate storage location
+  // --------------------------------------------------
+
+  if (data.storageLocationId) {
+    const storageLocation =
+      await tx.storageLocation.findUnique({
+        where: {
+          id: data.storageLocationId,
+        },
+        select: {
+          id: true,
+          warehouseId: true,
+          isActive: true,
+        },
+      });
+
+    if (!storageLocation) {
+      throw new Error("Storage location not found");
+    }
+
+    if (!storageLocation.isActive) {
+      throw new Error("Storage location is inactive");
+    }
+
+    if (storageLocation.warehouseId !== data.warehouseId) {
+      throw new Error(
+        "Storage location does not belong to the selected warehouse"
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // 5. Determine unit cost
+  // --------------------------------------------------
+
+  const unitCost =
+    data.unitCost !== null &&
+    data.unitCost !== undefined
+      ? new Prisma.Decimal(data.unitCost)
+      : new Prisma.Decimal(material.currentUnitPrice ?? 0);
+
+  if (unitCost.lt(0)) {
+    throw new Error("Unit cost cannot be negative");
+  }
+
+  const totalValue = quantity.mul(unitCost);
+
+  // --------------------------------------------------
+  // 6. Find existing inventory balance
+  // --------------------------------------------------
+
+  const existingBalance =
+    await tx.inventoryBalance.findFirst({
+      where: {
+        projectId: data.projectId,
+        materialId: data.materialId,
+        warehouseId: data.warehouseId,
+        storageLocationId:
+          data.storageLocationId ?? null,
+      },
+    });
+
+  let inventoryBalance;
+
+  if (!existingBalance) {
+    // ------------------------------------------------
+    // Create new balance
+    // ------------------------------------------------
+
+    inventoryBalance =
+      await tx.inventoryBalance.create({
+        data: {
+          projectId: data.projectId,
+          materialId: data.materialId,
+          warehouseId: data.warehouseId,
+          storageLocationId:
+            data.storageLocationId ?? null,
+
+          physicalQuantity: quantity,
+          reservedQuantity: new Prisma.Decimal(0),
+
+          averageUnitCost: unitCost,
+          stockValue: totalValue,
+        },
+      });
+  } else {
+    // ------------------------------------------------
+    // Weighted average cost
+    // ------------------------------------------------
+
+    const oldQuantity =
+      new Prisma.Decimal(
+        existingBalance.physicalQuantity
+      );
+
+    const oldAverageCost =
+      new Prisma.Decimal(
+        existingBalance.averageUnitCost
+      );
+
+    const oldStockValue =
+      new Prisma.Decimal(
+        existingBalance.stockValue
+      );
+
+    const newQuantity =
+      oldQuantity.add(quantity);
+
+    const newStockValue =
+      oldStockValue.add(totalValue);
+
+    const newAverageCost =
+      newQuantity.gt(0)
+        ? newStockValue.div(newQuantity)
+        : new Prisma.Decimal(0);
+
+    inventoryBalance =
+      await tx.inventoryBalance.update({
+        where: {
+          id: existingBalance.id,
+        },
+        data: {
+          physicalQuantity: newQuantity,
+          averageUnitCost: newAverageCost,
+          stockValue: newStockValue,
+        },
+      });
+  }
+
+  // --------------------------------------------------
+  // 7. Create inventory transaction
+  // --------------------------------------------------
+
+  const transactionNumber =
+    await generateInventoryTransactionNumber(tx);
+
+  const transaction =
+    await tx.inventoryTransaction.create({
+      data: {
+        transactionNumber,
+
+        projectId: data.projectId,
+        materialId: data.materialId,
+        warehouseId: data.warehouseId,
+        storageLocationId:data.storageLocationId ?? null,
+
+        transactionType: "RECEIPT",
+
+        quantity,
+        unitCost,
+        totalValue,
+
+        referenceType:data.referenceType ?? "GRN",
+
+        referenceId:data.referenceId ?? null,
+
+        performedBy:data.performedBy ?? null,
+
+        reason:
+          data.reason ??
+          "Accepted material received from GRN",
+      },
+    });
+
+  return {
+    inventoryBalance,
+    transaction,
+  };
+}
+
