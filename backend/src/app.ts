@@ -20,6 +20,7 @@ import materialIssueRoutes from "./routes/material-issue.routes";
 import buildingRoutes from "./routes/building.routes";
 import zoneRoutes from "./routes/zone.routes";
 import activityRoutes from "./routes/activity.routes";
+import materialConsumptionRoutes from "./routes/materialConsumption.routes";
 
 import { env } from "./config/env";
 
@@ -138,5 +139,10 @@ app.use(
 );
 
 app.use("/api/activities", activityRoutes);
+
+app.use(
+  "/api/material-consumption",
+  materialConsumptionRoutes
+);
 
 export default app;
