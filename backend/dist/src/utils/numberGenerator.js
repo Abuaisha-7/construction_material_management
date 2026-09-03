@@ -9,6 +9,7 @@ exports.generateDispositionNumber = generateDispositionNumber;
 exports.generateInventoryTransactionNumber = generateInventoryTransactionNumber;
 exports.generateMaterialIssueNumber = generateMaterialIssueNumber;
 exports.generateReturnNumber = generateReturnNumber;
+exports.generateCountNumber = generateCountNumber;
 async function generateRequestNumber(tx) {
     const year = new Date().getFullYear();
     const prefix = `MR-${year}-`;
@@ -228,4 +229,29 @@ async function generateReturnNumber(tx) {
         }
     }
     return `MR-${year}-${String(sequence).padStart(6, "0")}`;
+}
+async function generateCountNumber(tx) {
+    const year = new Date().getFullYear();
+    const lastCount = await tx.stockCount.findFirst({
+        where: {
+            countNumber: {
+                startsWith: `SC-${year}-`,
+            },
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+        select: {
+            countNumber: true,
+        },
+    });
+    let sequence = 1;
+    if (lastCount) {
+        const match = lastCount.countNumber.match(/-(\d+)$/);
+        if (match) {
+            sequence =
+                Number(match[1]) + 1;
+        }
+    }
+    return `SC-${year}-${String(sequence).padStart(6, "0")}`;
 }
