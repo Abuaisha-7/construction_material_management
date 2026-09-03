@@ -254,6 +254,7 @@ model Material {
   purchaseOrderItems    PurchaseOrderItem[]
   stockCountItems       StockCountItem[]
   quarantines           MaterialQuarantine[]
+  StockAdjustmentItem   StockAdjustmentItem[]
 
   @@index([isActive])
   @@index([categoryId], map: "idx_materials_category")
@@ -823,21 +824,22 @@ model MaterialReturnItem {
 }
 
 model StockCount {
-  id          String           @id @default(uuid()) @db.Char(36)
-  countNumber String           @unique(map: "count_number") @map("count_number") @db.VarChar(50)
-  projectId   String           @map("project_id") @db.Char(36)
-  warehouseId String?          @map("warehouse_id") @db.Char(36)
-  countDate   DateTime         @map("count_date") @db.Date
-  countedBy   String?          @map("counted_by") @db.Char(36)
-  verifiedBy  String?          @map("verified_by") @db.Char(36)
-  status      StockCountStatus @default(DRAFT)
-  remarks     String?          @db.Text
-  createdAt   DateTime         @default(now()) @map("created_at")
+  id          String            @id @default(uuid()) @db.Char(36)
+  countNumber String            @unique(map: "count_number") @map("count_number") @db.VarChar(50)
+  projectId   String            @map("project_id") @db.Char(36)
+  warehouseId String?           @map("warehouse_id") @db.Char(36)
+  countDate   DateTime          @map("count_date") @db.Date
+  countedBy   String?           @map("counted_by") @db.Char(36)
+  verifiedBy  String?           @map("verified_by") @db.Char(36)
+  status      StockCountStatus  @default(DRAFT)
+  remarks     String?           @db.Text
+  createdAt   DateTime          @default(now()) @map("created_at")
   items       StockCountItem[]
-  counter     User?            @relation("StockCountedBy", fields: [countedBy], references: [id])
-  project     Project          @relation(fields: [projectId], references: [id])
-  verifier    User?            @relation("StockVerifiedBy", fields: [verifiedBy], references: [id])
-  warehouse   Warehouse?       @relation(fields: [warehouseId], references: [id])
+  adjustments StockAdjustment[]
+  counter     User?             @relation("StockCountedBy", fields: [countedBy], references: [id])
+  project     Project           @relation(fields: [projectId], references: [id])
+  verifier    User?             @relation("StockVerifiedBy", fields: [verifiedBy], references: [id])
+  warehouse   Warehouse?        @relation(fields: [warehouseId], references: [id])
 
   @@index([countDate])
   @@index([countedBy], map: "stock_counts_counted_by_fkey")
@@ -870,23 +872,50 @@ model StockAdjustment {
   adjustmentNumber String                @unique(map: "adjustment_number") @map("adjustment_number") @db.VarChar(50)
   projectId        String                @map("project_id") @db.Char(36)
   warehouseId      String                @map("warehouse_id") @db.Char(36)
+  stockCountId     String?               @map("stock_count_id") @db.Char(36)
   requestedBy      String?               @map("requested_by") @db.Char(36)
   approvedBy       String?               @map("approved_by") @db.Char(36)
   adjustmentDate   DateTime              @map("adjustment_date") @db.Date
   status           StockAdjustmentStatus @default(PENDING)
   reason           String                @db.Text
   createdAt        DateTime              @default(now()) @map("created_at")
-  approver         User?                 @relation("AdjustmentApprovedBy", fields: [approvedBy], references: [id])
-  project          Project               @relation(fields: [projectId], references: [id])
-  requester        User?                 @relation("AdjustmentRequestedBy", fields: [requestedBy], references: [id])
-  warehouse        Warehouse             @relation(fields: [warehouseId], references: [id])
+
+  items StockAdjustmentItem[]
+
+  approver   User?       @relation("AdjustmentApprovedBy", fields: [approvedBy], references: [id])
+  requester  User?       @relation("AdjustmentRequestedBy", fields: [requestedBy], references: [id])
+  stockCount StockCount? @relation(fields: [stockCountId], references: [id])
+
+  project   Project   @relation(fields: [projectId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@index([status])
   @@index([approvedBy], map: "stock_adjustments_approved_by_fkey")
   @@index([projectId], map: "stock_adjustments_project_id_fkey")
   @@index([requestedBy], map: "stock_adjustments_requested_by_fkey")
   @@index([warehouseId], map: "stock_adjustments_warehouse_id_fkey")
+  @@index([stockCountId])
   @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id                String  @id @default(uuid()) @db.Char(36)
+  adjustmentId      String  @map("adjustment_id") @db.Char(36)
+  materialId        String  @map("material_id") @db.Char(36)
+  storageLocationId String? @map("storage_location_id") @db.Char(36)
+
+  systemQuantity   Decimal @map("system_quantity") @db.Decimal(18, 3)
+  physicalQuantity Decimal @map("physical_quantity") @db.Decimal(18, 3)
+  varianceQuantity Decimal @map("variance_quantity") @db.Decimal(18, 3)
+
+  reason String? @db.Text
+
+  adjustment StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  material   Material        @relation(fields: [materialId], references: [id])
+
+  @@index([adjustmentId])
+  @@index([materialId])
+  @@map("stock_adjustment_items")
 }
 
 model MaterialConsumption {
