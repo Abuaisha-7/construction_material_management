@@ -125,8 +125,12 @@ export async function getMaterialsController(
     return res.json({
       success: true,
       data: result.materials,
-      pagination:
-        result.pagination
+      pagination: {
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+      },
     });
 
   } catch (error) {
@@ -149,7 +153,7 @@ export async function getMaterialController(
 
     const material =
       await getMaterialById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.json({

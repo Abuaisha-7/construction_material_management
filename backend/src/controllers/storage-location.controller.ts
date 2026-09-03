@@ -90,7 +90,7 @@ export async function getStorageLocationByIdController(
   try {
     const storageLocation =
       await getStorageLocationById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.status(200).json({
@@ -124,7 +124,7 @@ export async function updateStorageLocationController(
 
     const storageLocation =
       await updateStorageLocation(
-        req.params.id,
+        (req as any).params.id,
         data
       );
 
@@ -154,7 +154,7 @@ export async function deactivateStorageLocationController(
   try {
     const storageLocation =
       await deactivateStorageLocation(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.status(200).json({
@@ -183,7 +183,7 @@ export async function activateStorageLocationController(
   try {
     const storageLocation =
       await activateStorageLocation(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.status(200).json({

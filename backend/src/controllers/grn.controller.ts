@@ -19,7 +19,7 @@ export async function createGrnController(
 ) {
   try {
 
-    const userId = req.user?.id;
+    const userId = (req as any).user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -95,7 +95,7 @@ export async function getGrnByIdController(
 
     const grn =
       await getGrnById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.json({
@@ -128,7 +128,7 @@ export async function updateGrnController(
 
     const grn =
       await updateGrn(
-        req.params.id,
+        (req as any).params.id,
         req.body
       );
 
@@ -162,7 +162,7 @@ export async function confirmGrnController(
 ) {
   try {
 
-    const userId = req.user?.id;
+    const userId = (req as any).user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -173,7 +173,7 @@ export async function confirmGrnController(
 
     const grn =
       await confirmGrn(
-        req.params.id,
+        (req as any).params.id,
         userId
       );
 
@@ -211,7 +211,7 @@ export async function rejectGrnController(
 
     const grn =
       await rejectGrn(
-        req.params.id,
+        (req as any).params.id,
         reason
       );
 

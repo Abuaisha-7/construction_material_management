@@ -383,7 +383,7 @@ import {
           );
         }
   
-        if (!project.isActive) {
+        if (project.status !== "ACTIVE") {
           throw new Error(
             "Cannot assign warehouse to an inactive project"
           );
@@ -642,7 +642,7 @@ import {
           );
         }
   
-        if (!warehouse.project.isActive) {
+        if (warehouse.project.status !== "ACTIVE") {
           throw new Error(
             "Cannot activate warehouse under an inactive project"
           );

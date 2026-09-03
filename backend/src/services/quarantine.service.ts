@@ -192,67 +192,89 @@ export async function createQuarantine(
     });
   }
 
- export async function getQuarantines(params?: {
+export async function getQuarantines(params?: {
     projectId?: string;
     status?: string;
     materialId?: string;
+    page?: number;
+    limit?: number;
   }) {
-    return prisma.materialQuarantine.findMany({
-      where: {
-        projectId: params?.projectId,
+    const page = Math.max(params?.page ?? 1, 1);
+    const limit = Math.min(Math.max(params?.limit ?? 20, 1), 100);
+    const skip = (page - 1) * limit;
   
-        status: params?.status as any,
+    const where = {
+      projectId: params?.projectId || undefined,
+      status: params?.status as any || undefined,
+      materialId: params?.materialId || undefined,
+    };
   
-        materialId:
-          params?.materialId,
-      },
+    const [quarantines, total] = await Promise.all([
+      prisma.materialQuarantine.findMany({
+        where,
+        skip,
+        take: limit,
   
-      orderBy: {
-        createdAt: "desc",
-      },
-  
-      include: {
-        project: true,
-  
-        material: true,
-  
-        unit: true,
-  
-        inspection: true,
-  
-        grn: true,
-  
-        grnItem: {
-          include: {
-            material: true,
-            unit: true,
-          },
+        orderBy: {
+          createdAt: "desc",
         },
   
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
+        include: {
+          project: true,
   
-        dispositions: {
-          orderBy: {
-            actionDate: "desc",
+          material: true,
+  
+          unit: true,
+  
+          inspection: true,
+  
+          grn: true,
+  
+          grnItem: {
+            include: {
+              material: true,
+              unit: true,
+            },
           },
-          include: {
-            performer: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
+  
+          creator: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+  
+          dispositions: {
+            orderBy: {
+              actionDate: "desc",
+            },
+  
+            include: {
+              performer: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+  
+      prisma.materialQuarantine.count({
+        where,
+      }),
+    ]);
+  
+    return {
+      quarantines,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
 export async function getQuarantineById(

@@ -14,7 +14,7 @@ export async function createQuarantineController(
   res: Response
 ) {
   try {
-    const userId = req.user!.id;
+    const userId = (req as any).user!.id;
 
     const quarantine =
       await createQuarantine(
@@ -71,7 +71,7 @@ export async function getQuarantinesController(
     }
   }
 
-  export async function getQuarantineByIdController(
+export async function getQuarantineByIdController(
     req: Request,
     res: Response
   ) {
@@ -95,12 +95,12 @@ export async function getQuarantinesController(
     }
   }
 
-  export async function createDispositionController(
+export async function createDispositionController(
     req: Request,
     res: Response
   ) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user!.id;
   
       const disposition =
         await createDisposition(

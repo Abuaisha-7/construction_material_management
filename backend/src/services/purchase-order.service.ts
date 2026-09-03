@@ -1,5 +1,5 @@
 import { prisma } from "../config/database";
-import { Prisma } from "@prisma/client";
+import { Prisma,  PurchaseOrderStatus, } from "@prisma/client";
 import {
   generatePurchaseOrderNumber
 } from "../utils/numberGenerator";
@@ -691,29 +691,25 @@ export async function getPurchaseOrderById(
         throw new Error("Purchase order not found");
       }
   
-      const cancellableStatuses = [
+      const cancellableStatuses = new Set<PurchaseOrderStatus>([
         "DRAFT",
         "PENDING_APPROVAL",
         "APPROVED",
         "PARTIALLY_RECEIVED",
-      ] as const;
-  
-      if (
-        !cancellableStatuses.includes(
-          purchaseOrder.status
-        )
-      ) {
+      ]);
+      
+      if (!cancellableStatuses.has(purchaseOrder.status)) {
         throw new Error(
           `Purchase order cannot be cancelled from ${purchaseOrder.status} status`
         );
       }
-  
+      
       if (!reason || !reason.trim()) {
         throw new Error(
           "Cancellation reason is required"
         );
       }
-  
+
       const updatedPO =
         await tx.purchaseOrder.update({
           where: {

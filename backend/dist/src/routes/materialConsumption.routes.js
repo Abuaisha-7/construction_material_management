@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const materialConsumption_controller_1 = require("../controllers/materialConsumption.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authenticate);
+router.post("/", materialConsumption_controller_1.createMaterialConsumptionController);
+router.get("/", materialConsumption_controller_1.getMaterialConsumptionsController);
+router.get("/:id", materialConsumption_controller_1.getMaterialConsumptionByIdController);
+router.patch("/:id", materialConsumption_controller_1.updateMaterialConsumptionController);
+router.delete("/:id", materialConsumption_controller_1.deleteMaterialConsumptionController);
+exports.default = router;

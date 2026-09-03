@@ -1,4 +1,7 @@
 import { prisma } from "../config/database";
+import {
+    ProjectStatus,
+} from "@prisma/client";
 
 interface CreateProjectInput {
   projectCode: string;
@@ -15,7 +18,7 @@ interface CreateProjectInput {
   plannedCompletionDate: Date;
   actualCompletionDate?: Date;
   contractDurationDays?: number;
-  status?: string;
+  status?: ProjectStatus;
 }
 
 export async function createProject(

@@ -125,7 +125,7 @@ export async function getSupplierByIdController(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const supplier =
       await getSupplierById(id);
@@ -164,7 +164,7 @@ export async function updateSupplierController(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const result =
       updateSupplierSchema.safeParse(req.body);
@@ -226,7 +226,7 @@ export async function deleteSupplierController(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     await deleteSupplier(id);
 

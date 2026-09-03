@@ -75,7 +75,7 @@ export async function getUnitById(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const unit = await getUnitByIdService(id);
 
@@ -108,7 +108,7 @@ export async function updateUnit(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const unit = await updateUnitService(
       id,
@@ -158,7 +158,7 @@ export async function deleteUnit(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     await deleteUnitService(id);
 

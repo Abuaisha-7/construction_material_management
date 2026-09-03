@@ -158,7 +158,7 @@ import {
   
       const request =
         await getMaterialRequestById(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({
@@ -210,7 +210,7 @@ import {
   
       const request =
         await updateMaterialRequest(
-          req.params.id,
+          (req as any).params.id,
           result.data
         );
   
@@ -247,7 +247,7 @@ import {
   
       const request =
         await submitMaterialRequest(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({
@@ -281,7 +281,7 @@ import {
     try {
       const request =
         await startMaterialRequestReview(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({
@@ -306,9 +306,9 @@ import {
     res: Response
   ) {
     try {
-      const { id } = req.params;
+      const { id } = (req as any).params;
   
-      const approverId = req.user?.id;
+      const approverId = (req as any).user?.id;
   
       if (!approverId) {
         return res.status(401).json({
@@ -364,7 +364,7 @@ import {
   
       const request =
         await rejectMaterialRequest(
-          req.params.id,
+          (req as any).params.id,
           result.data.reason
         );
   
@@ -394,7 +394,7 @@ import {
   
       const request =
         await cancelMaterialRequest(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({

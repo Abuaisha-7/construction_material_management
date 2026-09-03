@@ -66,7 +66,7 @@ export async function getCategoryById(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const category = await getCategoryByIdService(id);
 
@@ -96,7 +96,7 @@ export async function updateCategory(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     const category = await updateCategoryService(
       id,
@@ -143,7 +143,7 @@ export async function deleteCategory(
   res: Response
 ) {
   try {
-    const { id } = req.params;
+    const { id } = (req as any).params;
 
     await deleteCategoryService(id);
 

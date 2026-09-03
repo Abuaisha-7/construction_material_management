@@ -60,7 +60,7 @@ export async function getInventoryBalanceController(
   try {
     const balance =
       await getInventoryBalanceById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.status(200).json({
@@ -147,7 +147,7 @@ export async function getInventoryTransactionController(
   try {
     const transaction =
       await getInventoryTransactionById(
-        req.params.id
+        (req as any).params.id
       );
 
     return res.status(200).json({

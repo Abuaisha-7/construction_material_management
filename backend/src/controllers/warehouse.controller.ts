@@ -94,7 +94,7 @@ import {
     try {
       const warehouse =
         await getWarehouseById(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.status(200).json({
@@ -128,7 +128,7 @@ import {
   
       const warehouse =
         await updateWarehouse(
-          req.params.id,
+          (req as any).params.id,
           data
         );
   
@@ -158,7 +158,7 @@ import {
     try {
       const warehouse =
         await deactivateWarehouse(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.status(200).json({
@@ -187,7 +187,7 @@ import {
     try {
       const warehouse =
         await activateWarehouse(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.status(200).json({

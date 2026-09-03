@@ -106,7 +106,7 @@ import {
   
       const project =
         await getProjectById(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({
@@ -145,7 +145,7 @@ import {
   
       const project =
         await updateProject(
-          req.params.id,
+          (req as any).params.id,
           req.body
         );
   
@@ -186,7 +186,7 @@ import {
     try {
   
       await deactivateProject(
-        req.params.id
+        (req as any).params.id
       );
   
       return res.json({

@@ -112,7 +112,7 @@ export async function getPurchaseOrderController(
   
       const purchaseOrder =
         await getPurchaseOrderById(
-          req.params.id
+          (req as any).params.id
         );
   
       return res.json({
@@ -138,11 +138,11 @@ export async function submitPurchaseOrderController(
     res: Response
   ) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user!.id;
   
       const purchaseOrder =
         await submitPurchaseOrder(
-          req.params.id,
+          (req as any).params.id,
           userId
         );
   
@@ -169,11 +169,11 @@ export async function approvePurchaseOrderController(
     res: Response
   ) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user!.id;
   
       const purchaseOrder =
         await approvePurchaseOrder(
-          req.params.id,
+          (req as any).params.id,
           userId
         );
   
@@ -200,13 +200,13 @@ export async function cancelPurchaseOrderController(
     res: Response
   ) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user!.id;
   
       const { reason } = req.body;
   
       const purchaseOrder =
         await cancelPurchaseOrder(
-          req.params.id,
+          (req as any).params.id,
           userId,
           reason
         );
@@ -234,11 +234,11 @@ export async function closePurchaseOrderController(
     res: Response
   ) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user!.id;
   
       const purchaseOrder =
         await closePurchaseOrder(
-          req.params.id,
+          (req as any).params.id,
           userId
         );
   

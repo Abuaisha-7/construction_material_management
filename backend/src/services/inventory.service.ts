@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient, InventoryTransactionType, } from "@prisma/client";
 import { generateInventoryTransactionNumber } from "../utils/numberGenerator";
 
 const prisma = new PrismaClient();
@@ -21,7 +21,7 @@ export interface InventoryTransactionFilters {
   materialId?: string;
   warehouseId?: string;
   storageLocationId?: string;
-  transactionType?: Prisma.InventoryTransactionType;
+  transactionType?: InventoryTransactionType;
   referenceType?: string;
   referenceId?: string;
   page?: number;
