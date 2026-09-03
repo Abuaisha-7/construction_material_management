@@ -25,6 +25,7 @@ import materialReturnRoutes from "./routes/materialReturn.routes";
 import materialWastageRoutes from "./routes/materialWastage.routes";
 import stockCountRoutes from "./routes/stockCount.routes";
 import stockAdjustmentRoutes from "./routes/stockAdjustment.routes";
+import notificationRoutes from "./routes/notification.routes";
 
 import { env } from "./config/env";
 
@@ -168,5 +169,7 @@ app.use(
   "/api/stock-adjustments",
   stockAdjustmentRoutes
 );
+
+app.use("/api/notifications", notificationRoutes);
 
 export default app;
