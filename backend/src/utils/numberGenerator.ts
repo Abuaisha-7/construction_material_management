@@ -319,3 +319,45 @@ export async function generateReturnNumber(
 
   return `MR-${year}-${String(sequence).padStart(6, "0")}`;
 }
+
+export async function generateCountNumber(
+  tx: Prisma.TransactionClient
+) {
+  const year = new Date().getFullYear();
+
+  const lastCount =
+    await tx.stockCount.findFirst({
+      where: {
+        countNumber: {
+          startsWith: `SC-${year}-`,
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+
+      select: {
+        countNumber: true,
+      },
+    });
+
+  let sequence = 1;
+
+  if (lastCount) {
+    const match =
+      lastCount.countNumber.match(
+        /-(\d+)$/
+      );
+
+    if (match) {
+      sequence =
+        Number(match[1]) + 1;
+    }
+  }
+
+  return `SC-${year}-${String(sequence).padStart(
+    6,
+    "0"
+  )}`;
+}
