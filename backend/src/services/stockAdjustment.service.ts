@@ -3,7 +3,15 @@ import {
     StockAdjustmentStatus,
     InventoryTransactionType,
   } from "@prisma/client";
+
   import {prisma} from "../config/database";
+
+  import {
+    notifyStockAdjustmentCreated,
+    notifyStockAdjustmentApproved,
+    notifyStockAdjustmentRejected,
+    notifyStockAdjustmentPosted,
+  } from "./notification.events";
   
   interface StockAdjustmentItemInput {
     materialId: string;
@@ -188,36 +196,44 @@ import {
       adjustmentNumber = generateAdjustmentNumber();
     }
   
-    return prisma.stockAdjustment.create({
-      data: {
-        adjustmentNumber,
-        projectId: data.projectId,
-        warehouseId: data.warehouseId,
-        stockCountId: data.stockCountId,
-        requestedBy: userId,
-        adjustmentDate: new Date(data.adjustmentDate),
-        status: StockAdjustmentStatus.PENDING,
-        reason: data.reason,
-  
-        items: {
-          create: data.items.map((item) => ({
-            materialId: item.materialId,
-            storageLocationId: item.storageLocationId,
-            systemQuantity: toDecimal(item.systemQuantity),
-            physicalQuantity: toDecimal(item.physicalQuantity),
-            varianceQuantity: toDecimal(item.varianceQuantity),
-            reason: item.reason,
-          })),
-        },
+  return prisma.$transaction(async (tx) => {
+  const adjustment = await tx.stockAdjustment.create({
+    data: {
+      adjustmentNumber,
+      projectId: data.projectId,
+      warehouseId: data.warehouseId,
+      stockCountId: data.stockCountId,
+      requestedBy: userId,
+      adjustmentDate: new Date(data.adjustmentDate),
+      status: StockAdjustmentStatus.PENDING,
+      reason: data.reason,
+      items: {
+        create: data.items.map((item) => ({
+          materialId: item.materialId,
+          storageLocationId: item.storageLocationId,
+          systemQuantity: toDecimal(item.systemQuantity),
+          physicalQuantity: toDecimal(item.physicalQuantity),
+          varianceQuantity: toDecimal(item.varianceQuantity),
+          reason: item.reason,
+        })),
       },
-  
-      include: {
-        items: true,
-        project: true,
-        warehouse: true,
-        requester: true,
-      },
-    });
+    },
+    include: {
+      items: true,
+      project: true,
+      warehouse: true,
+      requester: true,
+    },
+  });
+
+  await notifyStockAdjustmentCreated(
+    adjustment.id,
+    adjustment.adjustmentNumber,
+    tx
+  );
+
+  return adjustment;
+});
   }
 
   export async function getStockAdjustments(filters?: {
@@ -407,21 +423,32 @@ export async function approveStockAdjustment(
       );
     }
   
-    return prisma.stockAdjustment.update({
-      where: {
-        id,
-      },
-  
-      data: {
-        status: StockAdjustmentStatus.APPROVED,
-        approvedBy: userId,
-      },
-  
-      include: {
-        items: true,
-        approver: true,
-        requester: true,
-      },
+    return prisma.$transaction(async (tx) => {
+      const updatedAdjustment = await tx.stockAdjustment.update({
+        where: {
+          id,
+        },
+        data: {
+          status: StockAdjustmentStatus.APPROVED,
+          approvedBy: userId,
+        },
+        include: {
+          items: true,
+          approver: true,
+          requester: true,
+        },
+      });
+    
+      if (updatedAdjustment.requestedBy) {
+        await notifyStockAdjustmentApproved(
+          updatedAdjustment.requestedBy,
+          updatedAdjustment.id,
+          updatedAdjustment.adjustmentNumber,
+          tx
+        );
+      }
+    
+      return updatedAdjustment;
     });
   }
 
@@ -451,21 +478,32 @@ export async function approveStockAdjustment(
       );
     }
   
-    return prisma.stockAdjustment.update({
-      where: {
-        id,
-      },
-  
-      data: {
-        status: StockAdjustmentStatus.REJECTED,
-        approvedBy: userId,
-      },
-  
-      include: {
-        items: true,
-        approver: true,
-        requester: true,
-      },
+    return prisma.$transaction(async (tx) => {
+      const updatedAdjustment = await tx.stockAdjustment.update({
+        where: {
+          id,
+        },
+        data: {
+          status: StockAdjustmentStatus.REJECTED,
+          approvedBy: userId,
+        },
+        include: {
+          items: true,
+          approver: true,
+          requester: true,
+        },
+      });
+    
+      if (updatedAdjustment.requestedBy) {
+        await notifyStockAdjustmentRejected(
+          updatedAdjustment.requestedBy,
+          updatedAdjustment.id,
+          updatedAdjustment.adjustmentNumber,
+          tx
+        );
+      }
+    
+      return updatedAdjustment;
     });
   }
 
@@ -585,20 +623,29 @@ export async function approveStockAdjustment(
         });
       }
   
-      return tx.stockAdjustment.update({
+      const postedAdjustment = await tx.stockAdjustment.update({
         where: {
           id,
         },
-  
         data: {
           status: StockAdjustmentStatus.POSTED,
         },
-  
         include: {
           items: true,
           requester: true,
           approver: true,
         },
       });
+      
+      if (postedAdjustment.requestedBy) {
+        await notifyStockAdjustmentPosted(
+          postedAdjustment.requestedBy,
+          postedAdjustment.id,
+          postedAdjustment.adjustmentNumber,
+          tx
+        );
+      }
+      
+      return postedAdjustment;
     });
   }

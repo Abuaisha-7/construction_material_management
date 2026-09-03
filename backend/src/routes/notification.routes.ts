@@ -1,20 +1,20 @@
+// src/routes/notification.routes.ts
+
 import { Router } from "express";
+
 import { authenticate } from "../middleware/auth.middleware";
 
 import {
-  createNotificationController,
   getNotificationsController,
   getNotificationByIdController,
   markNotificationAsReadController,
   markAllNotificationsAsReadController,
-  deleteNotificationController
+  deleteNotificationController,
 } from "../controllers/notification.controller";
 
 const router = Router();
 
 router.use(authenticate);
-
-router.post("/", createNotificationController);
 
 router.get("/", getNotificationsController);
 
