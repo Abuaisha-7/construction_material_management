@@ -22,6 +22,7 @@ import zoneRoutes from "./routes/zone.routes";
 import activityRoutes from "./routes/activity.routes";
 import materialConsumptionRoutes from "./routes/materialConsumption.routes";
 import materialReturnRoutes from "./routes/materialReturn.routes";
+import materialWastageRoutes from "./routes/materialWastage.routes";
 
 import { env } from "./config/env";
 
@@ -149,6 +150,11 @@ app.use(
 app.use(
   "/api/material-returns",
   materialReturnRoutes
+);
+
+app.use(
+  "/api/material-wastage",
+  materialWastageRoutes
 );
 
 export default app;
