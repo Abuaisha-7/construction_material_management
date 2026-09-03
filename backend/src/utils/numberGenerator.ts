@@ -287,3 +287,35 @@ export async function generateMaterialIssueNumber(
     "0"
   )}`;
 }
+
+export async function generateReturnNumber(
+  tx: Prisma.TransactionClient
+ ) {
+  const year = new Date().getFullYear();
+
+  const lastReturn = await tx.materialReturn.findFirst({
+    where: {
+      returnNumber: {
+        startsWith: `MR-${year}-`,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      returnNumber: true,
+    },
+  });
+
+  let sequence = 1;
+
+  if (lastReturn) {
+    const match = lastReturn.returnNumber.match(/-(\d+)$/);
+
+    if (match) {
+      sequence = Number(match[1]) + 1;
+    }
+  }
+
+  return `MR-${year}-${String(sequence).padStart(6, "0")}`;
+}
