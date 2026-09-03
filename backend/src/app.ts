@@ -26,6 +26,7 @@ import materialWastageRoutes from "./routes/materialWastage.routes";
 import stockCountRoutes from "./routes/stockCount.routes";
 import stockAdjustmentRoutes from "./routes/stockAdjustment.routes";
 import notificationRoutes from "./routes/notification.routes";
+import userRoleRoutes from "./routes/userRole.routes";
 
 import { env } from "./config/env";
 
@@ -66,6 +67,11 @@ app.get("/api/health", (_req, res) => {
 app.use(
   "/api/auth",
   authRoutes
+);
+
+app.use(
+  "/api/user-roles",
+  userRoleRoutes
 );
 
 app.use(
