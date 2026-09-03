@@ -29,6 +29,7 @@ const materialReturn_routes_1 = __importDefault(require("./routes/materialReturn
 const materialWastage_routes_1 = __importDefault(require("./routes/materialWastage.routes"));
 const stockCount_routes_1 = __importDefault(require("./routes/stockCount.routes"));
 const stockAdjustment_routes_1 = __importDefault(require("./routes/stockAdjustment.routes"));
+const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
 const env_1 = require("./config/env");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
@@ -72,4 +73,5 @@ app.use("/api/material-returns", materialReturn_routes_1.default);
 app.use("/api/material-wastage", materialWastage_routes_1.default);
 app.use("/api/stock-counts", stockCount_routes_1.default);
 app.use("/api/stock-adjustments", stockAdjustment_routes_1.default);
+app.use("/api/notifications", notification_routes_1.default);
 exports.default = app;
