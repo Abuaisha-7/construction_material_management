@@ -361,3 +361,28 @@ export async function generateCountNumber(
     "0"
   )}`;
 }
+
+export async function generateMaterialWastageNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const lastWastage = await tx.materialWastage.findFirst({
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      wastageNumber: true,
+    },
+  });
+
+  let nextNumber = 1;
+
+  if (lastWastage?.wastageNumber) {
+    const match = lastWastage.wastageNumber.match(/(\d+)$/);
+
+    if (match) {
+      nextNumber = Number(match[1]) + 1;
+    }
+  }
+
+  return `WST-${String(nextNumber).padStart(6, "0")}`;
+}

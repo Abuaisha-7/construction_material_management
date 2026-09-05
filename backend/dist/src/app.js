@@ -30,6 +30,7 @@ const materialWastage_routes_1 = __importDefault(require("./routes/materialWasta
 const stockCount_routes_1 = __importDefault(require("./routes/stockCount.routes"));
 const stockAdjustment_routes_1 = __importDefault(require("./routes/stockAdjustment.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
+const userRole_routes_1 = __importDefault(require("./routes/userRole.routes"));
 const env_1 = require("./config/env");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
@@ -51,6 +52,7 @@ app.get("/api/health", (_req, res) => {
     });
 });
 app.use("/api/auth", auth_routes_1.default);
+app.use("/api/user-roles", userRole_routes_1.default);
 app.use("/api/materials", material_routes_1.default);
 app.use("/api/projects", project_routes_1.default);
 app.use("/api/material-categories", material_category_routes_1.default);

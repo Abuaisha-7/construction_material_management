@@ -10,6 +10,7 @@ exports.postMaterialWastage = postMaterialWastage;
 const client_1 = require("@prisma/client");
 const database_1 = require("../config/database");
 const numberGenerator_1 = require("../utils/numberGenerator");
+const notification_events_1 = require("./notification.events");
 function toDecimal(value) {
     return new client_1.Prisma.Decimal(value);
 }
@@ -111,10 +112,6 @@ async function createMaterialWastage(userId, data) {
     await validateMaterial(data.materialId);
     await validateBuilding(data.projectId, data.buildingId);
     await validateActivity(data.projectId, data.activityId);
-    /**
-     * If activity has a building, make sure the
-     * explicitly supplied building is consistent.
-     */
     if (data.activityId && data.buildingId) {
         const activity = await database_1.prisma.activity.findUnique({
             where: {
@@ -129,35 +126,41 @@ async function createMaterialWastage(userId, data) {
             throw new Error("Activity does not belong to the specified building");
         }
     }
-    return database_1.prisma.materialWastage.create({
-        data: {
-            projectId: data.projectId,
-            materialId: data.materialId,
-            activityId: data.activityId,
-            buildingId: data.buildingId,
-            wastageDate: parseDate(data.wastageDate),
-            quantity: toDecimal(data.quantity),
-            reason: data.reason.trim(),
-            reportedBy: userId,
-            status: client_1.StockAdjustmentStatus.PENDING,
-        },
-        include: {
-            project: true,
-            material: {
-                include: {
-                    unit: true,
+    return database_1.prisma.$transaction(async (tx) => {
+        const wastageNumber = await (0, numberGenerator_1.generateMaterialWastageNumber)(tx);
+        const wastage = await tx.materialWastage.create({
+            data: {
+                wastageNumber,
+                projectId: data.projectId,
+                materialId: data.materialId,
+                activityId: data.activityId,
+                buildingId: data.buildingId,
+                wastageDate: parseDate(data.wastageDate),
+                quantity: toDecimal(data.quantity),
+                reason: data.reason.trim(),
+                reportedBy: userId,
+                status: client_1.StockAdjustmentStatus.PENDING,
+            },
+            include: {
+                project: true,
+                material: {
+                    include: {
+                        unit: true,
+                    },
+                },
+                activity: true,
+                building: true,
+                reporter: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                    },
                 },
             },
-            activity: true,
-            building: true,
-            reporter: {
-                select: {
-                    id: true,
-                    fullName: true,
-                    email: true,
-                },
-            },
-        },
+        });
+        await (0, notification_events_1.notifyMaterialWastageCreated)(wastage.projectId, wastage.id, wastage.wastageNumber, tx);
+        return wastage;
     });
 }
 /**
@@ -348,7 +351,7 @@ async function approveMaterialWastage(id, approverId) {
         if (wastage.reportedBy === approverId) {
             throw new Error("The person who reported wastage cannot approve the same record");
         }
-        return tx.materialWastage.update({
+        const updated = await tx.materialWastage.update({
             where: {
                 id,
             },
@@ -375,6 +378,10 @@ async function approveMaterialWastage(id, approverId) {
                 },
             },
         });
+        if (updated.reportedBy) {
+            await (0, notification_events_1.notifyMaterialWastageApproved)(updated.reportedBy, updated.id, updated.wastageNumber, tx);
+        }
+        return updated;
     });
 }
 /**
@@ -399,7 +406,7 @@ async function rejectMaterialWastage(id, approverId) {
         if (wastage.reportedBy === approverId) {
             throw new Error("The person who reported wastage cannot reject the same record");
         }
-        return tx.materialWastage.update({
+        const updated = await tx.materialWastage.update({
             where: {
                 id,
             },
@@ -424,6 +431,10 @@ async function rejectMaterialWastage(id, approverId) {
                 },
             },
         });
+        if (updated.reportedBy) {
+            await (0, notification_events_1.notifyMaterialWastageRejected)(updated.reportedBy, updated.id, updated.wastageNumber, tx);
+        }
+        return updated;
     });
 }
 /**
@@ -508,7 +519,7 @@ async function postMaterialWastage(id, userId) {
                 reason: wastage.reason,
             },
         });
-        return tx.materialWastage.update({
+        const updated = await tx.materialWastage.update({
             where: {
                 id,
             },
@@ -534,5 +545,9 @@ async function postMaterialWastage(id, userId) {
                 },
             },
         });
+        if (updated.reportedBy) {
+            await (0, notification_events_1.notifyMaterialWastagePosted)(updated.reportedBy, updated.id, updated.wastageNumber, tx);
+        }
+        return updated;
     });
 }
