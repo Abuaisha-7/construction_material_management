@@ -5,7 +5,13 @@ import {
 } from "@prisma/client";
 
 import {prisma} from "../config/database";
-import { generateInventoryTransactionNumber } from "../utils/numberGenerator";
+import { generateInventoryTransactionNumber, generateMaterialWastageNumber } from "../utils/numberGenerator";
+import {
+  notifyMaterialWastageCreated,
+  notifyMaterialWastageApproved,
+  notifyMaterialWastageRejected,
+  notifyMaterialWastagePosted,
+} from "./notification.events";
 
 export interface CreateMaterialWastageInput {
   projectId: string;
@@ -150,6 +156,7 @@ async function validateActivity(
  *
  * Inventory is NOT changed here.
  */
+
 export async function createMaterialWastage(
   userId: string,
   data: CreateMaterialWastageInput
@@ -161,7 +168,6 @@ export async function createMaterialWastage(
   }
 
   await validateProject(data.projectId);
-
   await validateMaterial(data.materialId);
 
   await validateBuilding(
@@ -174,10 +180,6 @@ export async function createMaterialWastage(
     data.activityId
   );
 
-  /**
-   * If activity has a building, make sure the
-   * explicitly supplied building is consistent.
-   */
   if (data.activityId && data.buildingId) {
     const activity = await prisma.activity.findUnique({
       where: {
@@ -198,36 +200,63 @@ export async function createMaterialWastage(
     }
   }
 
-  return prisma.materialWastage.create({
-    data: {
-      projectId: data.projectId,
-      materialId: data.materialId,
-      activityId: data.activityId,
-      buildingId: data.buildingId,
-      wastageDate: parseDate(data.wastageDate),
-      quantity: toDecimal(data.quantity),
-      reason: data.reason.trim(),
-      reportedBy: userId,
-      status: StockAdjustmentStatus.PENDING,
-    },
+  return prisma.$transaction(async (tx) => {
+    const wastageNumber =
+      await generateMaterialWastageNumber(tx);
 
-    include: {
-      project: true,
-      material: {
+    const wastage =
+      await tx.materialWastage.create({
+        data: {
+          wastageNumber,
+
+          projectId: data.projectId,
+          materialId: data.materialId,
+          activityId: data.activityId,
+          buildingId: data.buildingId,
+
+          wastageDate: parseDate(
+            data.wastageDate
+          ),
+
+          quantity: toDecimal(data.quantity),
+
+          reason: data.reason.trim(),
+
+          reportedBy: userId,
+
+          status: StockAdjustmentStatus.PENDING,
+        },
+
         include: {
-          unit: true,
+          project: true,
+
+          material: {
+            include: {
+              unit: true,
+            },
+          },
+
+          activity: true,
+          building: true,
+
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
         },
-      },
-      activity: true,
-      building: true,
-      reporter: {
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-        },
-      },
-    },
+      });
+
+    await notifyMaterialWastageCreated(
+      wastage.projectId,
+      wastage.id,
+      wastage.wastageNumber,
+      tx
+    );
+
+    return wastage;
   });
 }
 
@@ -497,35 +526,49 @@ export async function approveMaterialWastage(
       );
     }
 
-    return tx.materialWastage.update({
-      where: {
-        id,
-      },
+    const updated =
+      await tx.materialWastage.update({
+        where: {
+          id,
+        },
 
-      data: {
-        status: StockAdjustmentStatus.APPROVED,
-        approvedBy: approverId,
-      },
+        data: {
+          status: StockAdjustmentStatus.APPROVED,
+          approvedBy: approverId,
+        },
 
-      include: {
-        material: true,
-        project: true,
-        activity: true,
-        building: true,
-        reporter: {
-          select: {
-            id: true,
-            fullName: true,
+        include: {
+          material: true,
+          project: true,
+          activity: true,
+          building: true,
+
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+
+          approver: {
+            select: {
+              id: true,
+              fullName: true,
+            },
           },
         },
-        approver: {
-          select: {
-            id: true,
-            fullName: true,
-          },
-        },
-      },
-    });
+      });
+
+    if (updated.reportedBy) {
+      await notifyMaterialWastageApproved(
+        updated.reportedBy,
+        updated.id,
+        updated.wastageNumber,
+        tx
+      );
+    }
+
+    return updated;
   });
 }
 
@@ -567,33 +610,47 @@ export async function rejectMaterialWastage(
       );
     }
 
-    return tx.materialWastage.update({
-      where: {
-        id,
-      },
+    const updated =
+      await tx.materialWastage.update({
+        where: {
+          id,
+        },
 
-      data: {
-        status: StockAdjustmentStatus.REJECTED,
-        approvedBy: approverId,
-      },
+        data: {
+          status: StockAdjustmentStatus.REJECTED,
+          approvedBy: approverId,
+        },
 
-      include: {
-        material: true,
-        project: true,
-        reporter: {
-          select: {
-            id: true,
-            fullName: true,
+        include: {
+          material: true,
+          project: true,
+
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+
+          approver: {
+            select: {
+              id: true,
+              fullName: true,
+            },
           },
         },
-        approver: {
-          select: {
-            id: true,
-            fullName: true,
-          },
-        },
-      },
-    });
+      });
+
+    if (updated.reportedBy) {
+      await notifyMaterialWastageRejected(
+        updated.reportedBy,
+        updated.id,
+        updated.wastageNumber,
+        tx
+      );
+    }
+
+    return updated;
   });
 }
 
@@ -738,15 +795,13 @@ export async function postMaterialWastage(
       },
     });
 
-    return tx.materialWastage.update({
+    const updated = await tx.materialWastage.update({
       where: {
         id,
       },
-
       data: {
         status: StockAdjustmentStatus.POSTED,
       },
-
       include: {
         material: true,
         project: true,
@@ -766,5 +821,16 @@ export async function postMaterialWastage(
         },
       },
     });
+    
+    if (updated.reportedBy) {
+      await notifyMaterialWastagePosted(
+        updated.reportedBy,
+        updated.id,
+        updated.wastageNumber,
+        tx
+      );
+    }
+    
+    return updated;
   });
 }

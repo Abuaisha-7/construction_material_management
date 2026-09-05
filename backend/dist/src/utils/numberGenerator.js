@@ -10,6 +10,7 @@ exports.generateInventoryTransactionNumber = generateInventoryTransactionNumber;
 exports.generateMaterialIssueNumber = generateMaterialIssueNumber;
 exports.generateReturnNumber = generateReturnNumber;
 exports.generateCountNumber = generateCountNumber;
+exports.generateMaterialWastageNumber = generateMaterialWastageNumber;
 async function generateRequestNumber(tx) {
     const year = new Date().getFullYear();
     const prefix = `MR-${year}-`;
@@ -254,4 +255,22 @@ async function generateCountNumber(tx) {
         }
     }
     return `SC-${year}-${String(sequence).padStart(6, "0")}`;
+}
+async function generateMaterialWastageNumber(tx) {
+    const lastWastage = await tx.materialWastage.findFirst({
+        orderBy: {
+            createdAt: "desc",
+        },
+        select: {
+            wastageNumber: true,
+        },
+    });
+    let nextNumber = 1;
+    if (lastWastage?.wastageNumber) {
+        const match = lastWastage.wastageNumber.match(/(\d+)$/);
+        if (match) {
+            nextNumber = Number(match[1]) + 1;
+        }
+    }
+    return `WST-${String(nextNumber).padStart(6, "0")}`;
 }

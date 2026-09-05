@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { AuthRequest } from "../middleware/auth.middleware";
 
 import {
   createMaterialWastage,
@@ -13,11 +14,11 @@ import {
 import { StockAdjustmentStatus } from "@prisma/client";
 
 export async function createMaterialWastageController(
-  req: Request,
+  req: AuthRequest,
   res: Response
 ) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -49,7 +50,7 @@ export async function createMaterialWastageController(
 }
 
 export async function getMaterialWastagesController(
-  req: Request,
+  req: AuthRequest,
   res: Response
 ) {
   try {
@@ -91,7 +92,7 @@ export async function getMaterialWastagesController(
 }
 
 export async function getMaterialWastageByIdController(
-  req: Request,
+  req: AuthRequest,
   res: Response
 ) {
   try {

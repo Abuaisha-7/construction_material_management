@@ -4,6 +4,7 @@ import {
   } from "@prisma/client";
   
   import {
+    notifyProjectManager,
     notifyUser,
     notifyUsersByRoles,
   } from "./notification.service";
@@ -94,6 +95,83 @@ import {
         notificationType: NotificationType.INVENTORY,
         referenceType: "STOCK_ADJUSTMENT",
         referenceId: adjustmentId,
+      },
+      db
+    );
+  }
+
+  
+  export async function notifyMaterialWastageCreated(
+    projectId: string,
+    wastageId: string,
+    wastageNumber: string,
+    db: DbClient
+  ) {
+    return notifyProjectManager(
+      projectId,
+      {
+        title: "Material Wastage Reported",
+        message: `Material wastage ${wastageNumber} has been reported and requires review.`,
+        notificationType: NotificationType.MATERIAL,
+        referenceType: "MATERIAL_WASTAGE",
+        referenceId: wastageId,
+      },
+      db
+    );
+  }
+  
+  export async function notifyMaterialWastageApproved(
+    reporterId: string,
+    wastageId: string,
+    wastageNumber: string,
+    db: DbClient
+  ) {
+    return notifyUser(
+      reporterId,
+      {
+        title: "Material Wastage Approved",
+        message: `Material wastage ${wastageNumber} has been approved.`,
+        notificationType: NotificationType.SUCCESS,
+        referenceType: "MATERIAL_WASTAGE",
+        referenceId: wastageId,
+      },
+      db
+    );
+  }
+  
+  export async function notifyMaterialWastageRejected(
+    reporterId: string,
+    wastageId: string,
+    wastageNumber: string,
+    db: DbClient
+  ) {
+    return notifyUser(
+      reporterId,
+      {
+        title: "Material Wastage Rejected",
+        message: `Material wastage ${wastageNumber} has been rejected.`,
+        notificationType: NotificationType.ERROR,
+        referenceType: "MATERIAL_WASTAGE",
+        referenceId: wastageId,
+      },
+      db
+    );
+  }
+  
+  export async function notifyMaterialWastagePosted(
+    reporterId: string,
+    wastageId: string,
+    wastageNumber: string,
+    db: DbClient
+  ) {
+    return notifyUser(
+      reporterId,
+      {
+        title: "Material Wastage Posted",
+        message: `Material wastage ${wastageNumber} has been posted to inventory successfully.`,
+        notificationType: NotificationType.INVENTORY,
+        referenceType: "MATERIAL_WASTAGE",
+        referenceId: wastageId,
       },
       db
     );

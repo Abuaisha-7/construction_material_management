@@ -378,7 +378,7 @@ export const notifyProjectManager = async (
   }
 
   if (!project.projectManagerId) {
-    return null;
+    return { count: 0 };
   }
 
   return notifyUser(

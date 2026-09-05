@@ -212,9 +212,13 @@ const notifyUsersByRoles = async (roles, data, db = database_1.prisma) => {
     const users = await db.user.findMany({
         where: {
             status: "ACTIVE",
-            role: {
-                name: {
-                    in: roles,
+            roles: {
+                some: {
+                    role: {
+                        name: {
+                            in: roles,
+                        },
+                    },
                 },
             },
         },
@@ -260,7 +264,7 @@ const notifyProjectManager = async (projectId, data, db = database_1.prisma) => 
         throw new Error("Project not found");
     }
     if (!project.projectManagerId) {
-        return null;
+        return { count: 0 };
     }
     return (0, exports.notifyUser)(project.projectManagerId, data, db);
 };
