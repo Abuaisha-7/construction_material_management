@@ -68,6 +68,15 @@ export interface Requisition {
   estimatedTotal: number;
 }
 
+export type PurchaseOrderStatus =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "PARTIALLY_RECEIVED"
+  | "FULLY_RECEIVED"
+  | "CANCELLED"
+  | "CLOSED";
+
 export interface PurchaseOrder {
   id: string;
   ref: string;
@@ -75,7 +84,14 @@ export interface PurchaseOrder {
   supplier: string;
   date: string;
   items: { materialId: string; qty: number; unitPrice: number }[];
-  status: "Draft" | "Issued" | "Shipped" | "Delivered" | "Closed";
+  status:
+    | PurchaseOrderStatus
+    | "Draft"
+    | "Issued"
+    | "Shipped"
+    | "Delivered"
+    | "Closed"
+    | "Cancelled";
   deliveryTerms: string;
   total: number;
 }

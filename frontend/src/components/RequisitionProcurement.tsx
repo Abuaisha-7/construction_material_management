@@ -6,7 +6,7 @@ import {
   CircleCheck, Search,
 } from "lucide-react";
 import {
-  WORK_PACKAGES, etb, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition,
+  WORK_PACKAGES, etb, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition, type Material,
 } from "../types";
 import { MATERIALS } from "../data/mockData";
 
@@ -15,6 +15,9 @@ interface Props {
   setState: (s: AppState) => void;
   role: UserRole;
   focus: string | null;
+  materials?: Material[];
+  onCreateRequisitionBackend?: (items: { materialId: string; qty: number }[], remarks?: string) => Promise<boolean>;
+  onApproveRequisitionBackend?: (id: string) => Promise<boolean>;
 }
 
 type Tab = "requisitions" | "pos";
@@ -28,11 +31,27 @@ const STATUS_STYLE: Record<string, string> = {
   Shipped: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
   Delivered: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   Closed: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  Cancelled: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  // Backend PurchaseOrderStatus support
+  DRAFT: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  PENDING_APPROVAL: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  APPROVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  PARTIALLY_RECEIVED: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+  FULLY_RECEIVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  CANCELLED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  CLOSED: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 
-function NewRequisitionModal({ onSubmit }: { onSubmit: (r: Requisition, inv: { materialId: string; qty: number }[]) => void }) {
+function NewRequisitionModal({
+  onSubmit,
+  materials = MATERIALS,
+}: {
+  onSubmit: (r: Requisition, inv: { materialId: string; qty: number }[]) => void;
+  materials?: Material[];
+}) {
+  const activeMaterials = materials.length > 0 ? materials : MATERIALS;
   const [wp, setWp] = useState(WORK_PACKAGES[0]);
-  const [rows, setRows] = useState([{ materialId: MATERIALS[0].id, qty: 1 }]);
+  const [rows, setRows] = useState([{ materialId: activeMaterials[0].id, qty: 1 }]);
   const [needDate, setNeedDate] = useState("2025-07-01");
 
   const updRow = (i: number, patch: Partial<{ materialId: string; qty: number }>) =>
@@ -43,7 +62,7 @@ function NewRequisitionModal({ onSubmit }: { onSubmit: (r: Requisition, inv: { m
     if (valid.length === 0) return;
     const items = valid.map((r) => ({ materialId: r.materialId, qty: r.qty, needDate }));
     const estimatedTotal = valid.reduce((s, r) => {
-      const m = MATERIALS.find((x) => x.id === r.materialId);
+      const m = activeMaterials.find((x) => x.id === r.materialId);
       return s + (m ? m.unitPrice * r.qty : 0);
     }, 0);
     const req: Requisition = {
@@ -77,7 +96,7 @@ function NewRequisitionModal({ onSubmit }: { onSubmit: (r: Requisition, inv: { m
       <div className="mt-4 space-y-2">
         <label className="text-xs font-semibold text-muted-foreground">Required Items</label>
         {rows.map((r, i) => {
-          const m = MATERIALS.find((x) => x.id === r.materialId);
+          const m = activeMaterials.find((x) => x.id === r.materialId);
           return (
             <div key={i} className="flex items-center gap-2">
               <select
@@ -85,7 +104,7 @@ function NewRequisitionModal({ onSubmit }: { onSubmit: (r: Requisition, inv: { m
                 onChange={(e) => updRow(i, { materialId: e.target.value })}
                 className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none ring-ring focus:ring-2"
               >
-                {MATERIALS.map((mm) => <option key={mm.id} value={mm.id}>{mm.name} · {mm.unit}</option>)}
+                {activeMaterials.map((mm) => <option key={mm.id} value={mm.id}>{mm.name} · {mm.unit}</option>)}
               </select>
               <input
                 type="number" min={1} value={r.qty}
@@ -145,9 +164,9 @@ function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: 
   const submit = () => {
     const items = req
       ? req.items.map((it) => {
-          const m = MATERIALS.find((x) => x.id === it.materialId)!;
-          return { materialId: it.materialId, qty: it.qty, unitPrice: m.unitPrice };
-        })
+        const m = MATERIALS.find((x) => x.id === it.materialId)!;
+        return { materialId: it.materialId, qty: it.qty, unitPrice: m.unitPrice };
+      })
       : [{ materialId: MATERIALS[0].id, qty: 100, unitPrice: MATERIALS[0].unitPrice }];
     const total = items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
     const po: Purchy = {
@@ -218,13 +237,21 @@ function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: 
         <button className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent">Cancel</button>
         <button onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-amber-500 dark:text-slate-950">
           <Truck size={15} /> Issue PO
-          </button>
+        </button>
       </div>
     </div>
   );
 }
 
-export default function RequisitionProcurement({ state, setState, role, focus }: Props) {
+export default function RequisitionProcurement({
+  state,
+  setState,
+  role,
+  focus,
+  materials,
+  onCreateRequisitionBackend,
+  onApproveRequisitionBackend,
+}: Props) {
   const [tab, setTab] = useState<Tab>(focus === "po" ? "pos" : "requisitions");
   const [showNew, setShowNew] = useState(false);
   const [showPO, setShowPO] = useState<false | Requisition | "ad">(false);
@@ -243,7 +270,10 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
     return false;
   };
 
-  const approve = (r: Requisition) => {
+  const approve = async (r: Requisition) => {
+    if (onApproveRequisitionBackend && (r.id.length > 10 || r.id.includes("-"))) {
+      await onApproveRequisitionBackend(r.id);
+    }
     const trace = [...r.approvalTrace];
     let siteEngSigned = r.siteEngSigned;
     let pmSigned = r.pmSigned;
@@ -266,7 +296,10 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
     toast.success(`${p.ref} → ${next}`);
   };
 
-  const addReq = (r: Requisition, inv: { materialId: string; qty: number }[]) => {
+  const addReq = async (r: Requisition, inv: { materialId: string; qty: number }[]) => {
+    if (onCreateRequisitionBackend) {
+      await onCreateRequisitionBackend(inv, r.workPackage);
+    }
     setState({
       ...state,
       requisitions: [...state.requisitions, r],
@@ -325,7 +358,7 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
             {showNew && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
                 className="mb-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-                <NewRequisitionModal onSubmit={addReq} />
+                <NewRequisitionModal onSubmit={addReq} materials={materials} />
               </motion.div>
             )}
 
@@ -344,7 +377,7 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
                 </thead>
                 <tbody>
                   {reqs.map((r) => {
-                    const m = MATERIALS.find((x) => x.id === r.items[0]?.materialId);
+                    const m = materials.find((x) => x.id === r.items[0]?.materialId);
                     return (
                       <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                         <td className="px-3 py-3">
@@ -437,12 +470,16 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
                       </span>
                       <span className="font-semibold">{grnCount > 0 ? `${grnCount} received` : "not received"}</span>
                     </div>
-                    {role === "Procurement Officer" && p.status !== "Closed" && (
-                      <button onClick={() => togglePOStatus(p)}
-                        className="mt-3 w-full rounded-lg border border-border py-1.5 text-xs font-semibold hover:bg-accent">
-                        Advance to next stage
-                      </button>
-                    )}
+                    {role === "Procurement Officer" &&
+                      p.status !== "Closed" &&
+                      p.status !== "CLOSED" &&
+                      p.status !== "Cancelled" &&
+                      p.status !== "CANCELLED" && (
+                        <button onClick={() => togglePOStatus(p)}
+                          className="mt-3 w-full rounded-lg border border-border py-1.5 text-xs font-semibold hover:bg-accent">
+                          Advance to next stage
+                        </button>
+                      )}
                   </div>
                 );
               })}
@@ -469,7 +506,7 @@ export default function RequisitionProcurement({ state, setState, role, focus }:
               onClick={(e) => e.stopPropagation()}
               className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
             >
-                              <NewPOModal req={showPO && showPO !== "ad" ? showPO : null} onSubmit={addPO} />
+              <NewPOModal req={showPO && showPO !== "ad" ? showPO : null} onSubmit={addPO} />
             </motion.div>
           </motion.div>
         )}
