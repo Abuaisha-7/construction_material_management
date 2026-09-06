@@ -3,35 +3,76 @@ import {
   Wallet, TrendingUp, ArrowUpRight, ArrowDownRight, Package, FlaskConical,
   TriangleAlert, CircleCheckBig, MapPin, Calendar, ArrowRight,
 } from "lucide-react";
-import { PROJECT, etb, type AppState, type UserRole, WORK_PACKAGES } from "../types";
+import { PROJECT, etb, type AppState, type UserRole, type ProjectMeta, type Material, WORK_PACKAGES } from "../types";
 import { MATERIALS } from "../data/mockData";
 
 interface Props {
   state: AppState;
   role: UserRole;
+  project?: ProjectMeta;
+  materials?: Material[];
 }
 
 const STAGES = ["Requisition", "PO", "GRN", "Lab QC", "Storage", "Site Issue", "Variance"];
 
-export default function ProjectOverview({ state, role }: Props) {
-  const budget = PROJECT.budget;
-  const invoiced = 9840000;
-  const committed = state.purchaseOrders.filter((p) => p.status !== "Closed")
+export default function ProjectOverview({ state, role, project, materials }: Props) {
+  const currentProject = project || PROJECT;
+  const currentMaterials = materials || MATERIALS;
+
+  const budget = currentProject.budget;
+
+  // Backend PurchaseOrderStatus alignment:
+  // DRAFT | PENDING_APPROVAL | APPROVED | PARTIALLY_RECEIVED | FULLY_RECEIVED | CANCELLED | CLOSED
+  //
+  // 1. Invoiced: POs that are completed, billed, and closed
+  const invoiced = state.purchaseOrders
+    .filter((p) => p.status === "CLOSED" || p.status === "Closed")
     .reduce((s, p) => s + p.total, 0);
-  const spent = 7135000;
-  const variance = budget - (invoiced + committed);
+
+  // 2. Committed: Active purchase orders placed with suppliers
+  // Excludes DRAFT, CANCELLED, and CLOSED orders
+  const committed = state.purchaseOrders
+    .filter((p) =>
+      p.status === "APPROVED" ||
+      p.status === "PARTIALLY_RECEIVED" ||
+      p.status === "FULLY_RECEIVED" ||
+      p.status === "PENDING_APPROVAL" ||
+      p.status === "Issued" ||
+      p.status === "Shipped" ||
+      p.status === "Delivered"
+    )
+    .reduce((s, p) => s + p.total, 0);
+
+  // 3. Spent: Dynamic expenditure from settled purchase orders (replaces static 7,135,000 ETB)
+  const spent = invoiced;
+  const variance = budget - (spent + committed);
+
+  const activeOrdersCount = state.purchaseOrders.filter((p) =>
+    [
+      "APPROVED",
+      "PARTIALLY_RECEIVED",
+      "FULLY_RECEIVED",
+      "PENDING_APPROVAL",
+      "Issued",
+      "Shipped",
+      "Delivered",
+    ].includes(p.status)
+  ).length;
+  const closedOrdersCount = state.purchaseOrders.filter(
+    (p) => p.status === "CLOSED" || p.status === "Closed"
+  ).length;
 
   const warnItems = state.inventory.filter((i) => {
-    const m = MATERIALS.find((x) => x.id === i.materialId);
+    const m = currentMaterials.find((x) => x.id === i.materialId);
     return m && i.quantity <= m.reorderPoint;
   });
   const pendingQc = state.inspections.filter((q) => q.status === "Pending Inspection");
   const pendingMr = state.requisitions.filter((r) => r.status === "Pending");
 
   const cards = [
-    { label: "Total Budget", value: etb(budget), sub: "ET-SOM-JIG-2025-04", icon: Wallet, tone: "text-slate-700 dark:text-slate-200", ring: "bg-slate-100 dark:bg-slate-800" },
-    { label: "Committed (PO)", value: etb(committed), sub: `${state.purchaseOrders.length} active orders`, icon: TrendingUp, tone: "text-amber-600 dark:text-amber-400", ring: "bg-amber-100 dark:bg-amber-950" },
-    { label: "Invoiced / Spent", value: etb(spent), sub: "Paid + pending approval", icon: ArrowDownRight, tone: "text-sky-600 dark:text-sky-400", ring: "bg-sky-100 dark:bg-sky-950" },
+    { label: "Total Budget", value: etb(budget), sub: currentProject.ref, icon: Wallet, tone: "text-slate-700 dark:text-slate-200", ring: "bg-slate-100 dark:bg-slate-800" },
+    { label: "Committed (PO)", value: etb(committed), sub: `${activeOrdersCount} active orders`, icon: TrendingUp, tone: "text-amber-600 dark:text-amber-400", ring: "bg-amber-100 dark:bg-amber-950" },
+    { label: "Invoiced / Spent", value: etb(spent), sub: closedOrdersCount > 0 ? `${closedOrdersCount} settled orders` : "Paid & settled orders", icon: ArrowDownRight, tone: "text-sky-600 dark:text-sky-400", ring: "bg-sky-100 dark:bg-sky-950" },
     { label: "Remaining Variance", value: etb(variance), sub: variance > 0 ? "On track" : "Over budget", icon: ArrowUpRight, tone: variance > 0 ? "text-emerald-600" : "text-rose-600", ring: variance > 0 ? "bg-emerald-100 dark:bg-emerald-950" : "bg-rose-100 dark:bg-rose-950" },
   ];
 
@@ -51,22 +92,22 @@ export default function ProjectOverview({ state, role }: Props) {
                 ACTIVE PROJECT
               </span>
               <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <MapPin size={12} /> {PROJECT.location}
+                <MapPin size={12} /> {currentProject.location}
               </span>
               <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Calendar size={12} /> {PROJECT.started} → {PROJECT.targetDate}
+                <Calendar size={12} /> {currentProject.started} → {currentProject.targetDate}
               </span>
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{PROJECT.name}</h1>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{currentProject.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Client: <span className="font-medium text-foreground">{PROJECT.client}</span>
-              <span className="mx-2 text-border">|</span> Contract: {PROJECT.ref}
+              Client: <span className="font-medium text-foreground">{currentProject.client}</span>
+              <span className="mx-2 text-border">|</span> Contract: {currentProject.ref}
             </p>
           </div>
           <div className="flex items-center gap-4 lg:flex-col lg:items-end">
             <div className="text-right">
               <div className="text-3xl font-extrabold tracking-tight text-amber-600 dark:text-amber-400">
-                {PROJECT.progressPct}%
+                {currentProject.progressPct}%
               </div>
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Physical progress</div>
             </div>

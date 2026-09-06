@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   HardHat, Bell, BellRing, Search, ChevronDown, Plus, Building2, Moon, Sun,
   Check, CheckCheck, X, TriangleAlert, ShieldCheck, Truck, Package, Eye,
+  LogOut, RefreshCw, UserCheck,
 } from "lucide-react";
-import { ROLES, PROJECT, etb, type UserRole, type Material } from "../types";
+import { ROLES, PROJECT, etb, type UserRole, type Material, ProjectMeta } from "../types";
+import type { AuthUser } from "../services/auth.service";
 
 interface Notification {
   id: string;
@@ -46,11 +48,16 @@ interface NavbarProps {
   role: UserRole;
   setRole: (r: UserRole) => void;
   materials: Material[];
+  project: ProjectMeta;
   onQuickCreate: (tab: string) => void;
   onSearch: (q: string) => void;
   onNavigateTab?: (tab: string) => void;
   theme: "light" | "dark";
   toggleTheme: () => void;
+  user?: AuthUser | null;
+  onLogout?: () => void;
+  onRefresh?: () => void;
+  isSyncing?: boolean;
 }
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -72,7 +79,8 @@ const ROLE_TAG: Record<UserRole, string> = {
 };
 
 export default function Navbar({
-  role, setRole, materials, onQuickCreate, onSearch, onNavigateTab, theme, toggleTheme,
+  role, setRole, materials,project, onQuickCreate, onSearch, onNavigateTab, theme, toggleTheme,
+  user, onLogout, onRefresh, isSyncing,
 }: NavbarProps) {
   const [roleOpen, setRoleOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -136,9 +144,9 @@ export default function Navbar({
             <HardHat size={20} strokeWidth={2.2} />
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-bold tracking-tight">CMMS Dala Studio</div>
+            <div className="text-sm font-bold tracking-tight">CMMS NEMAR GC</div>
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Building2 size={11} /> {PROJECT.name}
+              <Building2 size={11} /> {project.name}
             </div>
           </div>
         </div>
@@ -146,7 +154,7 @@ export default function Navbar({
         {/* Project context chip (desktop) */}
         <div className="ml-2 hidden items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 xl:flex">
           <div className="text-[11px] text-amber-900 dark:text-amber-200">
-            <span className="font-semibold">{PROJECT.ref}</span> · {PROJECT.location.split(",")[0]}
+            <span className="font-semibold">{project.ref}</span> · {project.location.split(",")[0]}
           </div>
         </div>
 
@@ -187,7 +195,7 @@ export default function Navbar({
         <div className="hidden items-center rounded-lg border border-border bg-card px-3 py-1.5 lg:flex">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Budget</span>
           <span className="ml-2 font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
-            {etb(PROJECT.budget)}
+            {etb(project.budget)}
           </span>
         </div>
 
@@ -397,6 +405,18 @@ export default function Navbar({
           </AnimatePresence>
         </div>
 
+        {/* Live Backend API Sync */}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isSyncing}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 transition"
+            title="Sync live data with Backend API"
+          >
+            <RefreshCw size={15} className={isSyncing ? "animate-spin text-amber-500" : ""} />
+          </button>
+        )}
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
@@ -447,6 +467,30 @@ export default function Navbar({
             )}
           </AnimatePresence>
         </div>
+
+        {/* Authenticated User & Logout */}
+        {user && (
+          <div className="flex items-center gap-2 pl-1 border-l border-border">
+            <div className="hidden xl:flex flex-col text-right">
+              <span className="text-xs font-semibold leading-tight text-foreground truncate max-w-[130px]">
+                {user.fullName || "User"}
+              </span>
+              <span className="text-[10px] text-muted-foreground truncate max-w-[130px]">
+                {user.email}
+              </span>
+            </div>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition"
+                title="Log out from system"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );

@@ -36,10 +36,28 @@ app.use(
   helmet()
 );
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:5173",
+  env.frontendUrl,
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: env.frontendUrl,
-    credentials: true
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile, curl) or any localhost port during development
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
   })
 );
 

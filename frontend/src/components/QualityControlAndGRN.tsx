@@ -5,7 +5,7 @@ import {
   Truck, FlaskConical, Check, X, ShieldCheck, PackageCheck, PackageX,
   Boxes, Microscope, UserRound, FileText, RefreshCcw,
 } from "lucide-react";
-import { type AppState, type UserRole, type GRN as GRNType, type QCInspection } from "../types";
+import { type AppState, type UserRole, type GRN as GRNType, type QCInspection, type Material } from "../types";
 import { MATERIALS } from "../data/mockData";
 
 interface Props {
@@ -13,6 +13,9 @@ interface Props {
   setState: (s: AppState) => void;
   role: UserRole;
   focus: string | null;
+  materials?: Material[];
+  onConfirmGrnBackend?: (id: string) => Promise<boolean>;
+  onCompleteInspectionBackend?: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
 }
 
 type Tab = "grn" | "qc";
@@ -30,13 +33,20 @@ const COND_STYLE: Record<string, string> = {
   Short: "text-amber-600 dark:text-amber-400",
 };
 
-function NewGRNModal({ onSubmit }: { onSubmit: (g: GRNType) => void }) {
+function NewGRNModal({
+  onSubmit,
+  materials = MATERIALS,
+}: {
+  onSubmit: (g: GRNType) => void;
+  materials?: Material[];
+}) {
+  const activeMaterials = materials.length > 0 ? materials : MATERIALS;
   const [poRef, setPoRef] = useState("");
   const [supplier, setSupplier] = useState("Dangote Cement PLC");
   const [waybill, setWaybill] = useState("");
   const [truck, setTruck] = useState("");
   const [rows, setRows] = useState<{ materialId: string; qty: number; condition: "Good" | "Damaged" | "Short" }[]>([
-    { materialId: MATERIALS[0].id, qty: 1, condition: "Good" },
+    { materialId: activeMaterials[0].id, qty: 1, condition: "Good" },
   ]);
 
   const upd = (i: number, patch: Partial<{ materialId: string; qty: number; condition: "Good" | "Damaged" | "Short" }>) =>
@@ -76,22 +86,24 @@ function NewGRNModal({ onSubmit }: { onSubmit: (g: GRNType) => void }) {
           <div key={i} className="flex items-center gap-2">
             <select value={r.materialId} onChange={(e) => upd(i, { materialId: e.target.value })}
               className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none">
-              {MATERIALS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {activeMaterials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             <input type="number" min={1} value={r.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })}
-              className="h-9 w-16 rounded-lg border border-input bg-background px-2 text-right text-sm outline-none" />
-            <select value={r.condition} onChange={(e) => upd(i, { condition: e.target.value as "Good" })}
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none">
-              <option value="Good">Good</option><option value="Damaged">Damaged</option><option value="Short">Short</option>
+              className="h-9 w-20 rounded-lg border border-input bg-background px-2 text-right text-sm outline-none" />
+            <select value={r.condition} onChange={(e) => upd(i, { condition: e.target.value as "Good" | "Damaged" | "Short" })}
+              className="h-9 rounded-lg border border-input bg-background px-2 text-xs outline-none">
+              <option value="Good">Good</option>
+              <option value="Damaged">Damaged</option>
+              <option value="Short">Short</option>
             </select>
             <button onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40">
-              <X size={15} />
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent disabled:opacity-40">
+              <X size={14} />
             </button>
           </div>
         ))}
-        <button onClick={() => setRows((rs) => [...rs, { materialId: MATERIALS[0].id, qty: 1, condition: "Good" }])}
-          className="flex items-center gap-1.5 rounded-lg text-xs font-semibold text-amber-600 hover:text-amber-500">
+        <button onClick={() => setRows((rs) => [...rs, { materialId: activeMaterials[0].id, qty: 1, condition: "Good" }])}
+          className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
           <Boxes size={14} /> Add received item
         </button>
       </div>
@@ -105,7 +117,15 @@ function NewGRNModal({ onSubmit }: { onSubmit: (g: GRNType) => void }) {
   );
 }
 
-export default function QualityControlAndGRN({ state, setState, role, focus }: Props) {
+export default function QualityControlAndGRN({
+  state,
+  setState,
+  role,
+  focus,
+  materials,
+  onConfirmGrnBackend,
+  onCompleteInspectionBackend,
+}: Props) {
   const [tab, setTab] = useState<Tab>(focus === "qc" ? "qc" : "grn");
   const [showNew, setShowNew] = useState(false);
 
@@ -122,7 +142,16 @@ export default function QualityControlAndGRN({ state, setState, role, focus }: P
     toast.success(`${g.ref} logged · ${g.items.length} item(s)`);
   };
 
-  const setQcStatus = (q: QCInspection, status: QCInspection["status"]) => {
+  const setQcStatus = async (q: QCInspection, status: QCInspection["status"]) => {
+    if (onCompleteInspectionBackend && (q.id.length > 10 || q.id.includes("-"))) {
+      const backendResult =
+        status === "Approved for Use"
+          ? "ACCEPTED"
+          : status === "Quarantined"
+          ? "QUARANTINED"
+          : "REJECTED";
+      await onCompleteInspectionBackend(q.id, backendResult, q.note);
+    }
     setState({
       ...state,
       inspections: state.inspections.map((x) => (x.id === q.id ? { ...x, status } : x)),
@@ -165,7 +194,7 @@ export default function QualityControlAndGRN({ state, setState, role, focus }: P
             {showNew && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
                 className="mb-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-                <NewGRNModal onSubmit={addGRN} />
+                <NewGRNModal onSubmit={addGRN} materials={materials} />
               </motion.div>
             )}
 

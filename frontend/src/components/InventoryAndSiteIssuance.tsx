@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   BIN_ZONES, WORK_PACKAGES, etb, fmtQty, type AppState, type UserRole,
-  type IssueVoucher, type BinZone, type ReturnVoucher,
+  type IssueVoucher, type BinZone, type ReturnVoucher, type Material,
 } from "../types";
 import { MATERIALS } from "../data/mockData";
 
@@ -16,6 +16,7 @@ interface Props {
   setState: (s: AppState) => void;
   role: UserRole;
   focus: string | null;
+  materials?: Material[];
 }
 
 type Tab = "inventory" | "issues" | "returns";
@@ -28,11 +29,18 @@ const ZONE_STYLE: Record<string, string> = {
   Hazardous: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
 };
 
-function NewIssueModal({ onSubmit }: { onSubmit: (v: IssueVoucher) => void }) {
+function NewIssueModal({
+  onSubmit,
+  materials = MATERIALS,
+}: {
+  onSubmit: (v: IssueVoucher) => void;
+  materials?: Material[];
+}) {
+  const activeMaterials = materials.length > 0 ? materials : MATERIALS;
   const [wp, setWp] = useState<IssueVoucher["workPackage"]>("Substructure");
   const [taskCode, setTaskCode] = useState("TASK");
   const [gang, setGang] = useState("Gang 1");
-  const [rows, setRows] = useState([{ materialId: MATERIALS[0].id, qty: 1, binZone: "Store A" as BinZone }]);
+  const [rows, setRows] = useState([{ materialId: activeMaterials[0].id, qty: 1, binZone: "Store A" as BinZone }]);
 
   const upd = (i: number, patch: Partial<{ materialId: string; qty: number; binZone: BinZone }>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -66,12 +74,12 @@ function NewIssueModal({ onSubmit }: { onSubmit: (v: IssueVoucher) => void }) {
       <div className="mt-4 space-y-2">
         <label className="text-xs font-semibold text-muted-foreground">Materials</label>
         {rows.map((r, i) => {
-          const m = MATERIALS.find((x) => x.id === r.materialId);
+          const m = activeMaterials.find((x) => x.id === r.materialId);
           return (
             <div key={i} className="flex items-center gap-2">
               <select value={r.materialId} onChange={(e) => upd(i, { materialId: e.target.value })}
                 className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none">
-                {MATERIALS.map((mm) => <option key={mm.id} value={mm.id}>{mm.name}</option>)}
+                {activeMaterials.map((mm) => <option key={mm.id} value={mm.id}>{mm.name}</option>)}
               </select>
               <input type="number" min={1} value={r.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })}
                 className="h-9 w-16 rounded-lg border border-input bg-background px-2 text-right text-sm outline-none" />
@@ -87,7 +95,7 @@ function NewIssueModal({ onSubmit }: { onSubmit: (v: IssueVoucher) => void }) {
             </div>
           );
         })}
-        <button onClick={() => setRows((rs) => [...rs, { materialId: MATERIALS[0].id, qty: 1, binZone: "Store A" }])}
+        <button onClick={() => setRows((rs) => [...rs, { materialId: activeMaterials[0].id, qty: 1, binZone: "Store A" }])}
           className="flex items-center gap-1.5 rounded-lg text-xs font-semibold text-amber-600 hover:text-amber-500">
           <Package size={14} /> Add issue item
         </button>
@@ -102,7 +110,8 @@ function NewIssueModal({ onSubmit }: { onSubmit: (v: IssueVoucher) => void }) {
   );
 }
 
-export default function InventoryAndSiteIssuance({ state, setState, role, focus }: Props) {
+export default function InventoryAndSiteIssuance({ state, setState, role, focus, materials }: Props) {
+  const allMats = materials && materials.length > 0 ? materials : MATERIALS;
   const [tab, setTab] = useState<Tab>(focus === "issue" ? "issues" : "inventory");
   const [showIssue, setShowIssue] = useState(false);
 
@@ -120,14 +129,14 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
   };
 
   const lowStock = useMemo(() => state.inventory.filter((it) => {
-    const m = MATERIALS.find((x) => x.id === it.materialId);
+    const m = allMats.find((x) => x.id === it.materialId);
     return m && it.quantity <= m.reorderPoint;
-  }), [state.inventory]);
+  }), [state.inventory, allMats]);
 
   const totalValue = useMemo(() => state.inventory.reduce((s, it) => {
-    const m = MATERIALS.find((x) => x.id === it.materialId);
+    const m = allMats.find((x) => x.id === it.materialId);
     return s + (m ? m.unitPrice * it.quantity : 0);
-  }, 0), [state.inventory]);
+  }, 0), [state.inventory, allMats]);
 
   const returnsActive = tab === "returns";
 
@@ -183,8 +192,8 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
             {/* Visual bin map */}
             <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {BIN_ZONES.map((z, i) => {
-                const items = state.inventory.filter((it) => MATERIALS.find((m) => m.id === it.materialId)?.binZone === z);
-                const value = items.reduce((s, it) => { const m = MATERIALS.find((x) => x.id === it.materialId); return s + (m ? m.unitPrice * it.quantity : 0); }, 0);
+                const items = state.inventory.filter((it) => allMats.find((m) => m.id === it.materialId)?.binZone === z);
+                const value = items.reduce((s, it) => { const m = allMats.find((x) => x.id === it.materialId); return s + (m ? m.unitPrice * it.quantity : 0); }, 0);
                 return (
                   <motion.div key={z} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.05 }}
                     className="rounded-xl border border-border bg-card p-4">
@@ -197,7 +206,8 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
                     </div>
                     <div className="mt-3 space-y-1.5">
                       {items.slice(0, 3).map((it) => {
-                        const m = MATERIALS.find((x) => x.id === it.materialId)!;
+                        const m = allMats.find((x) => x.id === it.materialId);
+                        if (!m) return null;
                         return (
                           <div key={it.materialId} className="flex items-center justify-between text-[11px]">
                             <span className="truncate text-muted-foreground">{m.name.split(" ")[0]} {m.name.includes("Rebar") ? "Ø" + m.name.split(" ")[1] : ""}</span>
@@ -236,9 +246,15 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
                 </thead>
                 <tbody>
                   {state.inventory.map((it) => {
-                    const m = MATERIALS.find((x) => x.id === it.materialId)!;
+                    const m = allMats.find((x) => x.id === it.materialId) || {
+                      name: "Material #" + it.materialId.slice(0, 8),
+                      spec: "Stock unit",
+                      binZone: "Store A" as BinZone,
+                      unit: "unit",
+                      unitPrice: 0,
+                      reorderPoint: 10,
+                    };
                     const low = it.quantity <= m.reorderPoint;
-                    const avail = it.quantity - it.reserved;
                     return (
                       <tr key={it.materialId} className="border-b border-border last:border-0 hover:bg-muted/20">
                         <td className="px-3 py-2.5">
@@ -277,7 +293,7 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
             {showIssue && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
                 className="mb-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-                <NewIssueModal onSubmit={addIssue} />
+                <NewIssueModal onSubmit={addIssue} materials={allMats} />
               </motion.div>
             )}
 
@@ -297,7 +313,7 @@ export default function InventoryAndSiteIssuance({ state, setState, role, focus 
                   <div className="mt-2 text-xs text-muted-foreground">Gang: <span className="font-semibold text-foreground">{v.gang}</span></div>
                   <div className="mt-2 space-y-1 border-t border-border pt-2">
                     {v.items.map((it, i) => {
-                      const m = MATERIALS.find((x) => x.id === it.materialId)!;
+                      const m = allMats.find((x) => x.id === it.materialId) || { name: "Material", unit: "unit" };
                       return (
                         <div key={i} className="flex items-center justify-between text-xs">
                           <span>{m.name} <span className="text-muted-foreground">× {fmtQty(it.qty)} {m.unit}</span></span>
