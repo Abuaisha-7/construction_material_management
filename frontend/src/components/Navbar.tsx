@@ -79,7 +79,7 @@ const ROLE_TAG: Record<UserRole, string> = {
 };
 
 export default function Navbar({
-  role, setRole, materials,project, onQuickCreate, onSearch, onNavigateTab, theme, toggleTheme,
+  role, setRole, materials, project, onQuickCreate, onSearch, onNavigateTab, theme, toggleTheme,
   user, onLogout, onRefresh, isSyncing,
 }: NavbarProps) {
   const [roleOpen, setRoleOpen] = useState(false);
@@ -200,6 +200,7 @@ export default function Navbar({
         </div>
 
         {/* Quick create */}
+        {role === "Project Manager" && (
         <div className="relative">
           <button
             onClick={() => setCreateOpen((o) => !o)}
@@ -236,6 +237,7 @@ export default function Navbar({
             )}
           </AnimatePresence>
         </div>
+        )}
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>
@@ -298,11 +300,10 @@ export default function Navbar({
                     <button
                       key={t.key}
                       onClick={() => setNotifFilter(t.key)}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                        notifFilter === t.key
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${notifFilter === t.key
                           ? "bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-950"
                           : "text-muted-foreground hover:bg-accent"
-                      }`}
+                        }`}
                     >
                       {t.label}
                     </button>
@@ -325,18 +326,16 @@ export default function Navbar({
                       return (
                         <div
                           key={n.id}
-                          className={`group relative flex cursor-pointer gap-3 border-b border-border/50 px-4 py-3 transition hover:bg-accent/50 ${
-                            !n.read ? "bg-accent/20" : ""
-                          }`}
+                          className={`group relative flex cursor-pointer gap-3 border-b border-border/50 px-4 py-3 transition hover:bg-accent/50 ${!n.read ? "bg-accent/20" : ""
+                            }`}
                           onClick={() => handleNotifClick(n)}
                         >
                           {/* Category icon */}
-                          <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                            n.category === "alert" ? "bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" :
-                            n.category === "approval" ? "bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400" :
-                            n.category === "delivery" ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" :
-                            "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                          }`}>
+                          <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${n.category === "alert" ? "bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" :
+                              n.category === "approval" ? "bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400" :
+                                n.category === "delivery" ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" :
+                                  "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                            }`}>
                             <CatIcon size={15} />
                           </div>
 
@@ -426,47 +425,14 @@ export default function Navbar({
         </button>
 
         {/* Role switcher */}
-        <div className="relative">
-          <button
-            onClick={() => setRoleOpen((o) => !o)}
-            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-2 pl-1.5 transition hover:bg-accent"
-          >
+       
+          <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-2 pl-1.5 transition hover:bg-accent">
             <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold text-white ${ROLE_COLORS[role]}`}>
               {ROLE_TAG[role]}
             </span>
             <span className="hidden max-w-[110px] truncate text-xs font-medium md:block">{role}</span>
-            <ChevronDown size={14} className="text-muted-foreground" />
-          </button>
-          <AnimatePresence>
-            {roleOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                className="absolute right-0 top-11 z-50 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-xl"
-              >
-                <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Switch operational persona
-                </div>
-                {ROLES.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => { setRole(r); setRoleOpen(false); }}
-                    className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm hover:bg-accent ${role === r ? "bg-accent font-semibold" : ""}`}
-                  >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold text-white ${ROLE_COLORS[r]}`}>
-                      {ROLE_TAG[r]}
-                    </span>
-                    {r}
-                    {role === r && (
-                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    )}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          </div>
+     
 
         {/* Authenticated User & Logout */}
         {user && (
