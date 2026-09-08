@@ -6,27 +6,12 @@ import {
   LogOut, RefreshCw, UserCheck,
 } from "lucide-react";
 import { ROLES, PROJECT, etb, type UserRole, type Material, ProjectMeta } from "../types";
-import type { AuthUser } from "../services/auth.service";
-
-interface Notification {
-  id: string;
-  title: string;
-  description: string;
-  category: "alert" | "approval" | "delivery" | "qc";
-  workspace: "overview" | "req" | "quality" | "inventory";
-  read: boolean;
-  timestamp: string;
-}
-
-const NOTIFICATIONS: Notification[] = [
-  { id: "N1", title: "Material Stock Critical", description: "Rebar Ø16mm stock dropped below reorder threshold in Yard 2", category: "alert", workspace: "inventory", read: false, timestamp: "12 min ago" },
-  { id: "N2", title: "Requisition Pending Approval", description: "MR-2025-042 requires Project Manager review", category: "approval", workspace: "req", read: false, timestamp: "1 hr ago" },
-  { id: "N3", title: "Concrete Test Due", description: "28-day compressive strength test for Tower B raft slab", category: "qc", workspace: "quality", read: false, timestamp: "2 hr ago" },
-  { id: "N4", title: "Delivery Arrived at Gate", description: "Dangote OPC 42.5N truck arrived at Site Gate 1", category: "delivery", workspace: "quality", read: false, timestamp: "3 hr ago" },
-  { id: "N5", title: "QC Sample Quarantined", description: "River Sand batch quarantined — silt content 2.8% exceeds 2%", category: "qc", workspace: "quality", read: true, timestamp: "5 hr ago" },
-  { id: "N6", title: "PO Issued to Supplier", description: "PO-2025-124 issued to Haramaya Fencing — awaiting acknowledgement", category: "delivery", workspace: "req", read: true, timestamp: "1 day ago" },
-  { id: "N7", title: "Stock Reorder Alert", description: "PPC Cement 42.5N approaching reorder point at Store A", category: "alert", workspace: "inventory", read: true, timestamp: "2 days ago" },
-];
+import { authService, type AuthUser } from "../services/auth.service";
+import {
+  notificationService,
+  mapBackendNotificationToUI,
+  type UINotification as Notification,
+} from "../services/notification.service";
 
 const CATEGORY_ICONS: Record<Notification["category"], typeof Bell> = {
   alert: TriangleAlert,
@@ -88,8 +73,54 @@ export default function Navbar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifFilter, setNotifFilter] = useState<FilterKey>("all");
-  const [notifications, setNotifications] = useState(NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Fetch notifications strictly scoped to the authenticated user from the database
+  const loadNotifications = async () => {
+    const currentUserId = user?.id || authService.getCurrentUser()?.id;
+    if (!currentUserId || !authService.isAuthenticated()) {
+      setNotifications([]);
+      return;
+    }
+
+    try {
+      setNotifLoading(true);
+      const res = await notificationService.getNotifications({ limit: 50 });
+      if (res?.success && Array.isArray(res.notifications)) {
+        // Enforce user-only scoping: only notifications belonging to this active user
+        const userOnlyNotifs = res.notifications
+          .filter((n) => !n.userId || n.userId === currentUserId)
+          .map(mapBackendNotificationToUI);
+        setNotifications(userOnlyNotifs);
+      }
+    } catch (err) {
+      console.error("Failed to load user notifications:", err);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+
+    // Auto poll every 30 seconds for live database updates
+    const interval = setInterval(() => {
+      loadNotifications();
+    }, 30000);
+
+    // Event listener for in-app updates
+    const handleRefresh = () => {
+      loadNotifications();
+    };
+    window.addEventListener("cmms:refresh_notifications", handleRefresh);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("cmms:refresh_notifications", handleRefresh);
+    };
+  }, [user?.id]);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
@@ -99,16 +130,41 @@ export default function Navbar({
     return notifications.filter((n) => n.category === notifFilter);
   }, [notifications, notifFilter]);
 
-  const markRead = (id: string) => {
+  const markRead = async (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    try {
+      await notificationService.markAsRead(id);
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+    }
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await notificationService.markAllAsRead();
+    } catch (err) {
+      console.error("Failed to mark all notifications as read:", err);
+    }
   };
 
-  const dismissNotif = (id: string) => {
+  const dismissNotif = async (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await notificationService.deleteNotification(id);
+    } catch (err) {
+      console.error("Failed to delete notification:", err);
+    }
+  };
+
+  const clearAll = async () => {
+    setNotifications([]);
+    setNotifOpen(false);
+    try {
+      await notificationService.clearAllNotifications();
+    } catch (err) {
+      console.error("Failed to clear notifications:", err);
+    }
   };
 
   const handleNotifClick = (n: Notification) => {
@@ -280,18 +336,23 @@ export default function Navbar({
                     <span className="text-sm font-semibold">Notifications</span>
                     {unreadCount > 0 && (
                       <span className="rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-400">
-                        {unreadCount} new
+                        {unreadCount > 99 ? "99+" : `${unreadCount} new`}
                       </span>
                     )}
                   </div>
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllRead}
-                      className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition"
-                    >
-                      <CheckCheck size={13} /> Mark all read
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {notifLoading && (
+                      <RefreshCw size={12} className="animate-spin text-muted-foreground" />
+                    )}
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition"
+                      >
+                        <CheckCheck size={13} /> Mark all read
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Filter tabs */}
@@ -312,7 +373,12 @@ export default function Navbar({
 
                 {/* Notification list */}
                 <div className="max-h-[320px] overflow-y-auto overscroll-contain">
-                  {filteredNotifs.length === 0 ? (
+                  {notifLoading && notifications.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                      <RefreshCw size={22} className="animate-spin text-amber-500" />
+                      <span className="text-xs text-muted-foreground">Loading notifications...</span>
+                    </div>
+                  ) : filteredNotifs.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
                       <Check size={28} className="text-muted-foreground/40" />
                       <span className="text-sm font-medium text-muted-foreground">All clear</span>
@@ -389,10 +455,7 @@ export default function Navbar({
                 {notifications.length > 0 && (
                   <div className="border-t border-border px-4 py-2 text-center">
                     <button
-                      onClick={() => {
-                        setNotifications([]);
-                        setNotifOpen(false);
-                      }}
+                      onClick={clearAll}
                       className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition"
                     >
                       Clear all notifications

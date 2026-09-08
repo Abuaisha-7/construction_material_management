@@ -10,6 +10,7 @@ import {
   markNotificationAsReadController,
   markAllNotificationsAsReadController,
   deleteNotificationController,
+  clearAllNotificationsController,
 } from "../controllers/notification.controller";
 
 const router = Router();
@@ -28,6 +29,16 @@ router.patch(
 router.patch(
   "/read-all",
   markAllNotificationsAsReadController
+);
+
+router.delete(
+  "/clear-all",
+  clearAllNotificationsController
+);
+
+router.delete(
+  "/",
+  clearAllNotificationsController
 );
 
 router.delete(

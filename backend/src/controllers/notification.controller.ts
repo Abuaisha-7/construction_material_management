@@ -9,6 +9,7 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
   deleteNotification,
+  clearAllNotifications,
 } from "../services/notification.service";
 
 export async function getNotificationsController(
@@ -138,6 +139,28 @@ export async function deleteNotificationController(
     return res.status(404).json({
       success: false,
       message: error.message,
+    });
+  }
+}
+
+export async function clearAllNotificationsController(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const result = await clearAllNotifications(req.user!.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "All notifications cleared",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to clear notifications",
     });
   }
 }

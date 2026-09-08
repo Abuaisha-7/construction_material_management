@@ -181,8 +181,7 @@ export const markNotificationAsRead = async (
       id: notificationId,
     },
     data: {
-      isRead: true,
-      readAt: new Date(),
+      isRead: true
     },
   });
 };
@@ -200,8 +199,7 @@ export const markAllNotificationsAsRead = async (
       isRead: false,
     },
     data: {
-      isRead: true,
-      readAt: new Date(),
+      isRead: true
     },
   });
 
@@ -234,6 +232,24 @@ export const deleteNotification = async (
       id: notificationId,
     },
   });
+};
+
+/* =========================================================
+   CLEAR ALL NOTIFICATIONS FOR USER
+========================================================= */
+
+export const clearAllNotifications = async (
+  userId: string
+) => {
+  const result = await prisma.notification.deleteMany({
+    where: {
+      userId,
+    },
+  });
+
+  return {
+    count: result.count,
+  };
 };
 
 /* =========================================================

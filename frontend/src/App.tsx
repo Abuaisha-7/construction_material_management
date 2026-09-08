@@ -85,7 +85,7 @@ function App() {
   const quickCreate = (k: string) => {
     const map: Record<string, string> = {
       requisition: "req",
-      po: "procurement",
+      po: "req",
       grn: "quality",
       qc: "quality",
       issue: "inventory",
@@ -259,7 +259,7 @@ function App() {
                   materials={materials}
                 />
               )}
-              {tab === "req" && (
+              {tab === "req"  && (
                 <RequisitionProcurement
                   state={state}
                   setState={setState}
