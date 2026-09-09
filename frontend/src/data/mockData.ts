@@ -35,25 +35,25 @@ export const MATERIALS: Material[] = [
 const REQS: Requisition[] = [
   {
     id: "R1", ref: "MR-2025-041", requestedBy: "Gr. Taddesse Alemu", workPackage: "Substructure",
-    date: "2025-06-02", status: "Approved",
+    date: "2025-06-02", status: "APPROVED",
     items: [{ materialId: "M08", qty: 60, needDate: "2025-06-20" }, { materialId: "M09", qty: 55, needDate: "2025-06-20" }, { materialId: "M10", qty: 50, needDate: "2025-06-20" }],
     approvalTrace: ["Site Eng: approved", "PM: approved"], siteEngSigned: true, pmSigned: true, estimatedTotal: 371900,
   },
   {
     id: "R2", ref: "MR-2025-042", requestedBy: "Eng. Hanna Worku", workPackage: "Superstructure",
-    date: "2025-06-08", status: "Pending",
+    date: "2025-06-08", status: "SUBMITTED",
     items: [{ materialId: "M01", qty: 320, needDate: "2025-06-25" }, { materialId: "M04", qty: 9, needDate: "2025-06-25" }],
     approvalTrace: ["Site Eng: pending"], siteEngSigned: true, pmSigned: false, estimatedTotal: 1275600,
   },
   {
     id: "R3", ref: "MR-2025-043", requestedBy: "Gr. Mulugeta Bekele", workPackage: "Masonry",
-    date: "2025-06-14", status: "Draft",
+    date: "2025-06-14", status: "DRAFT",
     items: [{ materialId: "M11", qty: 8000, needDate: "2025-07-02" }, { materialId: "M12", qty: 2500, needDate: "2025-07-02" }, { materialId: "M08", qty: 40, needDate: "2025-07-02" }],
     approvalTrace: [], siteEngSigned: false, pmSigned: false, estimatedTotal: 524900,
   },
   {
     id: "R4", ref: "MR-2025-044", requestedBy: "Eng. Dawit Kebede", workPackage: "Fencing & Gate",
-    date: "2025-06-18", status: "Approved",
+    date: "2025-06-18", status: "APPROVED",
     items: [{ materialId: "M13", qty: 18, needDate: "2025-07-10" }, { materialId: "M18", qty: 1600, needDate: "2025-07-10" }],
     approvalTrace: ["Site Eng: approved", "PM: approved"], siteEngSigned: true, pmSigned: true, estimatedTotal: 184800,
   },

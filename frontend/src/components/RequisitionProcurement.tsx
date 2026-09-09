@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
   FileText, ShoppingCart, Plus, Check, X, ArrowRight, Truck, Banknote,
-  CircleCheck, Search, Sparkles,
+  CircleCheck, Search, Sparkles, Eye,
 } from "lucide-react";
 import {
-  WORK_PACKAGES, etb, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition, type Material,
+  WORK_PACKAGES, etb, fmtQty, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition, type Material,
   ProjectMeta,
 } from "../types";
 import { MATERIALS } from "../data/mockData";
@@ -35,12 +35,28 @@ interface Props {
     items: MRItem[],
     opts?: { requiredDate?: string; priority?: MRPriority; purpose?: string; remarks?: string }
   ) => Promise<Requisition | null>;
-  onApproveRequisitionBackend?: (id: string) => Promise<boolean>;
+  onSubmitRequisitionBackend?: (id: string) => Promise<boolean>;
+  onStartRequisitionReviewBackend?: (id: string) => Promise<boolean>;
+  onApproveRequisitionBackend?: (id: string, comments?: string) => Promise<boolean>;
+  onRejectRequisitionBackend?: (id: string, reason?: string) => Promise<boolean>;
+  onCancelRequisitionBackend?: (id: string) => Promise<boolean>;
 }
 
 type Tab = "requisitions" | "pos";
 
 const STATUS_STYLE: Record<string, string> = {
+  DRAFT: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  SUBMITTED: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  UNDER_REVIEW: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  RETURNED: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  APPROVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  PARTIALLY_APPROVED: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+  REJECTED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  PARTIALLY_SUPPLIED: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+  FULLY_SUPPLIED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  COMPLETED: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  CANCELLED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  // Legacy / PO status support
   Draft: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Pending: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   Approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -50,15 +66,15 @@ const STATUS_STYLE: Record<string, string> = {
   Delivered: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   Closed: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   Cancelled: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
-  // Backend PurchaseOrderStatus support
-  DRAFT: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   PENDING_APPROVAL: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  APPROVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   PARTIALLY_RECEIVED: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
   FULLY_RECEIVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  CANCELLED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
   CLOSED: "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
+
+const MR_FILTERS = ["All", "DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CANCELLED", "RETURNED"];
+
+const isBackendId = (id: string) => id.length > 10 || id.includes("-");
 
 interface NewMaterialRow {
   kind: "existing" | "new";
@@ -498,6 +514,240 @@ function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: 
   );
 }
 
+function RequisitionDetailModal({
+  r,
+  catalog,
+  isManager,
+  busy,
+  onClose,
+  onSubmit,
+  onStartReview,
+  onApprove,
+  onReject,
+  onCancel,
+  onOpenPO,
+}: {
+  r: Requisition;
+  catalog: Material[];
+  isManager: boolean;
+  busy: { id: string; action: string } | null;
+  onClose: () => void;
+  onSubmit: (x: Requisition) => void;
+  onStartReview: (x: Requisition) => void;
+  onApprove: (x: Requisition, comments?: string) => void;
+  onReject: (x: Requisition, reason?: string) => void;
+  onCancel: (x: Requisition) => void;
+  onOpenPO: (x: Requisition) => void;
+}) {
+  const [confirmReject, setConfirmReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [approveComments, setApproveComments] = useState("");
+
+  const byId = (id: string) => catalog.find((x) => x.id === id);
+  const unitPrice = (it: Requisition["items"][number]) => {
+    const p = it.unitPrice != null ? Number(it.unitPrice) : NaN;
+    return !Number.isNaN(p) && p > 0 ? p : byId(it.materialId)?.unitPrice ?? 0;
+  };
+  const unit = (it: Requisition["items"][number]) => it.unit ?? byId(it.materialId)?.unit ?? "unit";
+  const name = (it: Requisition["items"][number]) => it.name ?? byId(it.materialId)?.name ?? "Unknown material";
+
+  const busyFor = (a: string) => busy?.id === r.id && busy.action === a;
+
+  const doRejectWithReason = () => {
+    if (!rejectReason.trim()) {
+      toast.error("A rejection reason is required.");
+      return;
+    }
+    onReject(r, rejectReason.trim());
+  };
+
+  return (
+    <div className="p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-bold tracking-tight">{r.ref}</h3>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[r.status]}`}>{r.status.replace(/_/g, " ")}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">{r.requestedBy} · {r.date}</p>
+        </div>
+        <button onClick={onClose} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close">
+          <X size={15} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <div className="rounded-lg bg-muted/40 p-2.5">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Work Package</div>
+          <div className="font-semibold">{r.workPackage}</div>
+        </div>
+        {r.requiredDate && (
+          <div className="rounded-lg bg-muted/40 p-2.5">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Required By</div>
+            <div className="font-semibold">{r.requiredDate}</div>
+          </div>
+        )}
+        {r.priority && (
+          <div className="rounded-lg bg-muted/40 p-2.5">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Priority</div>
+            <div className="font-semibold">{r.priority}</div>
+          </div>
+        )}
+      </div>
+
+      {(r.purpose || r.remarks) && (
+        <div className="mt-3 space-y-1.5 text-sm">
+          {r.purpose && (
+            <div>
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground">Purpose · </span>
+              <span className="text-muted-foreground">{r.purpose}</span>
+            </div>
+          )}
+          {r.remarks && (
+            <div>
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground">Remarks · </span>
+              <span className="text-muted-foreground">{r.remarks}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 overflow-hidden rounded-xl border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-[11px] uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">#</th>
+              <th className="px-3 py-2 text-left">Material</th>
+              <th className="px-3 py-2 text-center">Unit</th>
+              <th className="px-3 py-2 text-right">Qty</th>
+              <th className="px-3 py-2 text-right">Unit Price</th>
+              <th className="px-3 py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {r.items.map((it, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
+                <td className="px-3 py-2">
+                  <div className="font-medium">{name(it)}</div>
+                  <div className="text-[11px] text-muted-foreground">{byId(it.materialId)?.spec ?? it.remarks ?? ""}</div>
+                </td>
+                <td className="px-3 py-2 text-center text-muted-foreground">{unit(it)}</td>
+                <td className="px-3 py-2 text-right font-mono">{fmtQty(it.qty)}</td>
+                <td className="px-3 py-2 text-right font-mono">{etb(unitPrice(it))}</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">{etb(unitPrice(it) * it.qty)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border bg-muted/30">
+              <td colSpan={5} className="px-3 py-2 text-right text-[11px] uppercase tracking-wide text-muted-foreground">Estimated Total</td>
+              <td className="px-3 py-2 text-right font-mono font-bold text-amber-600 dark:text-amber-400">{etb(r.estimatedTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {r.status === "DRAFT" && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={() => onCancel(r)} disabled={busyFor("cancel")}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">Cancel</button>
+            <button onClick={() => onSubmit(r)} disabled={busyFor("submit")}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-950">
+              <Check size={15} /> {busyFor("submit") ? "Submitting…" : "Submit for Approval"}
+            </button>
+          </div>
+        )}
+
+        {r.status === "SUBMITTED" && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {!isManager && <span className="mr-auto text-xs text-muted-foreground">Awaiting review by Project Manager.</span>}
+            {isManager && (
+              <button onClick={() => onStartReview(r)} disabled={busyFor("review")}
+                className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
+                <ArrowRight size={15} /> {busyFor("review") ? "Moving…" : "Start Review"}
+              </button>
+            )}
+            <button onClick={() => onCancel(r)} disabled={busyFor("cancel")}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">Cancel</button>
+          </div>
+        )}
+
+        {r.status === "UNDER_REVIEW" && (
+          <div className="space-y-3">
+            {isManager ? (
+              <>
+                <div className="rounded-xl border border-border bg-muted/20 p-3">
+                  <label className="text-xs font-semibold text-muted-foreground">Approval Comments (optional)</label>
+                  <textarea value={approveComments} onChange={(e) => setApproveComments(e.target.value)} rows={2}
+                    className="mt-1 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none"
+                    placeholder="e.g. Budget confirmed, proceed with procurement." />
+                  <button onClick={() => onApprove(r, approveComments.trim() || undefined)} disabled={busyFor("approve")}
+                    className="mt-2 flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+                    <Check size={15} /> {busyFor("approve") ? "Approving…" : "Approve Requisition"}
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3">
+                  <label className="text-xs font-semibold text-rose-600 dark:text-rose-400">Rejection Reason (required)</label>
+                  <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={2}
+                    className="mt-1 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none"
+                    placeholder="e.g. Quantity exceeds budgeted allowance." />
+                  {confirmReject ? (
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={doRejectWithReason} disabled={busyFor("reject")}
+                        className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-50">
+                        {busyFor("reject") ? "Rejecting…" : "Confirm Reject"}
+                      </button>
+                      <button onClick={() => setConfirmReject(false)}
+                        className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent">Back</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmReject(true)}
+                      className="mt-2 rounded-lg border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-500/10 dark:text-rose-400">
+                      Reject Requisition
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-right text-xs text-muted-foreground">Under review — awaiting Project Manager decision.</div>
+            )}
+            <div className="flex justify-end">
+              <button onClick={() => onCancel(r)} disabled={busyFor("cancel")}
+                className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">Cancel Requisition</button>
+            </div>
+          </div>
+        )}
+
+        {r.status === "APPROVED" && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <p className="mr-auto self-center text-xs text-muted-foreground">Approved by project management.</p>
+            <button onClick={() => onOpenPO(r)}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-amber-500 dark:text-slate-950">
+              <Banknote size={15} /> Issue Purchase Order
+            </button>
+          </div>
+        )}
+
+        {["REJECTED", "CANCELLED", "RETURNED", "PARTIALLY_APPROVED", "COMPLETED"].includes(r.status) && (
+          <div className="flex justify-end">
+            <p className="mr-auto self-center text-xs text-muted-foreground">
+              {r.status === "REJECTED" && (r.remarks ? `Reason: ${r.remarks}` : "Rejected by project management.")}
+              {r.status === "CANCELLED" && "This requisition was cancelled."}
+              {r.status === "RETURNED" && "Returned to requester for revision."}
+              {r.status === "PARTIALLY_APPROVED" && "Partially approved — awaiting remaining quantities."}
+              {r.status === "COMPLETED" && "Fully executed and closed."}
+            </p>
+            <button onClick={onClose} className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent">Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function RequisitionProcurement({
   state,
   setState,
@@ -505,43 +755,75 @@ export default function RequisitionProcurement({
   focus,
   materials,
   onCreateRequisitionBackend,
+  onSubmitRequisitionBackend,
+  onStartRequisitionReviewBackend,
   onApproveRequisitionBackend,
+  onRejectRequisitionBackend,
+  onCancelRequisitionBackend,
 }: Props) {
   const [tab, setTab] = useState<Tab>(focus === "po" ? "pos" : "requisitions");
   const [showNew, setShowNew] = useState(false);
   const [showPO, setShowPO] = useState<false | Requisition | "ad">(false);
+  const [viewReq, setViewReq] = useState<Requisition | null>(null);
   const [filter, setFilter] = useState("All");
+  const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
+
+  const catalog = materials && materials.length > 0 ? materials : MATERIALS;
+  const byId = (id: string) => catalog.find((x) => x.id === id);
 
   const reqs = useMemo(() => {
     if (filter === "All") return state.requisitions;
     return state.requisitions.filter((r) => r.status === filter);
   }, [state.requisitions, filter]);
 
-  const statuses = ["All", "Draft", "Pending", "Approved", "Rejected"];
+  const statuses = MR_FILTERS;
 
-  const canApprove = (r: Requisition) => {
-    if (role === "Site Engineer" && !r.siteEngSigned) return true;
-    if (role === "Project Manager" && r.siteEngSigned && !r.pmSigned) return true;
-    return false;
-  };
+  const isManager = role === "Project Manager";
 
-  const approve = async (r: Requisition) => {
-    if (onApproveRequisitionBackend && (r.id.length > 10 || r.id.includes("-"))) {
-      await onApproveRequisitionBackend(r.id);
-    }
-    const trace = [...r.approvalTrace];
-    let siteEngSigned = r.siteEngSigned;
-    let pmSigned = r.pmSigned;
-    if (role === "Site Engineer" && !siteEngSigned) { siteEngSigned = true; trace.push("Site Eng: approved"); }
-    else if (role === "Project Manager" && siteEngSigned && !pmSigned) { pmSigned = true; trace.push("PM: approved"); }
-    const done = siteEngSigned && pmSigned;
+  const patchReq = (id: string, patch: Partial<Requisition>) => {
     setState({
       ...state,
-      requisitions: state.requisitions.map((x) =>
-        x.id === r.id ? { ...x, siteEngSigned, pmSigned, approvalTrace: trace, status: done ? "Approved" : "Pending" } : x),
+      requisitions: state.requisitions.map((x) => (x.id === id ? { ...x, ...patch } : x)),
     });
-    toast.success(done ? `${r.ref} fully approved` : `${r.ref} advanced in approval matrix`);
   };
+
+  const runTransition = async (
+    r: Requisition,
+    action: string,
+    nextStatus: Requisition["status"],
+    backend: (() => Promise<boolean>) | null,
+    localExtra?: Partial<Requisition> & { mockMessage?: string }
+  ) => {
+    setBusy({ id: r.id, action });
+    try {
+      if (backend && isBackendId(r.id)) {
+        await backend();
+      } else {
+        patchReq(r.id, { ...(localExtra ?? {}), status: nextStatus });
+        setViewReq((v) => (v && v.id === r.id ? { ...v, ...(localExtra ?? {}), status: nextStatus } : v));
+        toast.success(localExtra?.mockMessage ?? `${r.ref} → ${nextStatus}`);
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doSubmit = (r: Requisition) =>
+    runTransition(r, "submit", "SUBMITTED", onSubmitRequisitionBackend ? () => onSubmitRequisitionBackend!(r.id) : null, { mockMessage: `${r.ref} submitted for approval` });
+
+  const doStartReview = (r: Requisition) =>
+    runTransition(r, "review", "UNDER_REVIEW", onStartRequisitionReviewBackend ? () => onStartRequisitionReviewBackend!(r.id) : null, { mockMessage: `${r.ref} moved to UNDER_REVIEW` });
+
+  const doApprove = (r: Requisition, comments?: string) =>
+    runTransition(r, "approve", "APPROVED", onApproveRequisitionBackend ? () => onApproveRequisitionBackend!(r.id, comments) : null, { pmSigned: true, approvalTrace: [...r.approvalTrace, "PM: approved"], mockMessage: `${r.ref} approved` });
+
+  const doReject = (r: Requisition, reason?: string) =>
+    runTransition(r, "reject", "REJECTED", onRejectRequisitionBackend ? () => onRejectRequisitionBackend!(r.id, reason) : null, { remarks: reason || "Rejected", mockMessage: `${r.ref} rejected` });
+
+  const doCancel = (r: Requisition) =>
+    runTransition(r, "cancel", "CANCELLED", onCancelRequisitionBackend ? () => onCancelRequisitionBackend!(r.id) : null, { mockMessage: `${r.ref} cancelled` });
+
+  const itemName = (it: Requisition["items"][number]) => it.name ?? byId(it.materialId)?.name ?? "Unknown material";
 
   const togglePOStatus = (p: Purchy) => {
     const order: Purchy["status"][] = ["Draft", "Issued", "Shipped", "Delivered", "Closed"];
@@ -637,16 +919,17 @@ export default function RequisitionProcurement({
                     <th className="px-3 py-2.5">Work Package</th>
                     <th className="px-3 py-2.5">Items</th>
                     <th className="px-3 py-2.5 text-right">Est. Total (ETB)</th>
-                    <th className="px-3 py-2.5 text-center">Approval Trace</th>
                     <th className="px-3 py-2.5 text-center">Status</th>
                     <th className="px-3 py-2.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reqs.map((r) => {
-                    const m = materials.find((x) => x.id === r.items[0]?.materialId);
+                    const first = r.items[0];
+                    const firstDesc = itemName(first ?? { materialId: "", qty: 0, needDate: "" });
                     return (
-                      <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <tr key={r.id} onClick={() => setViewReq(r)}
+                        className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/20">
                         <td className="px-3 py-3">
                           <div className="font-semibold">{r.ref}</div>
                           <div className="text-[11px] text-muted-foreground">{r.requestedBy} · {r.date}</div>
@@ -654,42 +937,80 @@ export default function RequisitionProcurement({
                         <td className="px-3 py-3"><span className="rounded-md bg-muted px-2 py-1 text-xs font-medium">{r.workPackage}</span></td>
                         <td className="px-3 py-3">
                           <div className="text-xs">{r.items.length} line item(s)</div>
-                          <div className="text-[11px] text-muted-foreground">{m?.name ?? ""}{r.items.length > 1 ? " +" + (r.items.length - 1) : ""}</div>
+                          <div className="text-[11px] text-muted-foreground">{firstDesc}{r.items.length > 1 ? " +" + (r.items.length - 1) : ""}</div>
                         </td>
                         <td className="px-3 py-3 text-right font-mono font-semibold">{etb(r.estimatedTotal)}</td>
                         <td className="px-3 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span title="Site Eng" className={`h-2 w-2 rounded-full ${r.siteEngSigned ? "bg-emerald-500" : "bg-slate-300"}`} />
-                            <ArrowRight size={11} className="text-muted-foreground" />
-                            <span title="PM" className={`h-2 w-2 rounded-full ${r.pmSigned ? "bg-emerald-500" : "bg-slate-300"}`} />
-                            <ArrowRight size={11} className="text-muted-foreground" />
-                            <span title="Procurement" className={`h-2 w-2 rounded-full ${r.status === "Approved" ? "bg-emerald-500" : "bg-slate-300"}`} />
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[r.status]}`}>{r.status.replace(/_/g, " ")}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {canApprove(r) && (
-                              <button onClick={() => approve(r)}
-                                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500">
-                                Approve
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            {r.status === "DRAFT" && (
+                              <>
+                                <button onClick={() => doSubmit(r)} disabled={busy?.id === r.id}
+                                  className="flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-950">
+                                  <Check size={12} /> {busy?.id === r.id && busy.action === "submit" ? "Submitting…" : "Submit"}
+                                </button>
+                                <button onClick={() => doCancel(r)} disabled={busy?.id === r.id}
+                                  className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-50">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                            {r.status === "SUBMITTED" && (
+                              <>
+                                {isManager ? (
+                                  <button onClick={() => doStartReview(r)} disabled={busy?.id === r.id}
+                                    className="flex items-center gap-1 rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
+                                    <ArrowRight size={12} /> {busy?.id === r.id && busy.action === "review" ? "Moving…" : "Start Review"}
+                                  </button>
+                                ) : (
+                                  <button onClick={() => setViewReq(r)}
+                                    className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold hover:bg-accent">
+                                    <Eye size={12} /> Review
+                                  </button>
+                                )}
+                                <button onClick={() => doCancel(r)} disabled={busy?.id === r.id}
+                                  className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-50">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                            {r.status === "UNDER_REVIEW" && isManager && (
+                              <>
+                                <button onClick={() => doApprove(r)} disabled={busy?.id === r.id}
+                                  className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+                                  {busy?.id === r.id && busy.action === "approve" ? "Approving…" : "Approve"}
+                                </button>
+                                <button onClick={() => doReject(r)} disabled={busy?.id === r.id}
+                                  className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50">
+                                  Reject
+                                </button>
+                                <button onClick={() => doCancel(r)} disabled={busy?.id === r.id}
+                                  className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-50">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                            {r.status === "UNDER_REVIEW" && !isManager && (
+                              <button onClick={() => setViewReq(r)}
+                                className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold hover:bg-accent">
+                                <Eye size={12} /> View
                               </button>
                             )}
-                            {r.status === "Approved" && (
+                            {r.status === "APPROVED" && (
                               <button onClick={() => setShowPO(r)}
                                 className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold hover:bg-accent">
                                 <Banknote size={12} /> PO
                               </button>
                             )}
-                          </div>
+                            </div>
                         </td>
                       </tr>
                     );
                   })}
                   {reqs.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">No requisitions found.</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">No requisitions found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -774,6 +1095,40 @@ export default function RequisitionProcurement({
               className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
             >
               <NewPOModal req={showPO && showPO !== "ad" ? showPO : null} onSubmit={addPO} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MR detail / review modal */}
+      <AnimatePresence>
+        {viewReq && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={() => setViewReq(null)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
+            >
+              <RequisitionDetailModal
+                r={viewReq}
+                catalog={catalog}
+                isManager={isManager}
+                busy={busy}
+                onClose={() => setViewReq(null)}
+                onSubmit={(x) => void doSubmit(x).then(() => setViewReq((v) => (v && v.id === x.id ? null : v)))}
+                onStartReview={(x) => void doStartReview(x).then(() => setViewReq((v) => (v && v.id === x.id ? null : v)))}
+                onApprove={(x, comments) => void doApprove(x, comments).then(() => setViewReq((v) => (v && v.id === x.id ? null : v)))}
+                onReject={(x, reason) => void doReject(x, reason).then(() => setViewReq((v) => (v && v.id === x.id ? null : v)))}
+                onCancel={(x) => void doCancel(x).then(() => setViewReq((v) => (v && v.id === x.id ? null : v)))}
+                onOpenPO={(x) => {
+                  setShowPO(x);
+                  setViewReq(null);
+                }}
+              />
             </motion.div>
           </motion.div>
         )}

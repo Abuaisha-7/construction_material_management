@@ -39,7 +39,11 @@ function App() {
     error,
     refreshAll,
     createRequisition,
+    submitRequisition,
+    startRequisitionReview,
     approveRequisition,
+    rejectRequisition,
+    cancelRequisition,
     confirmGrn,
     completeInspection,
   } = useAppData();
@@ -268,7 +272,11 @@ function App() {
                   focus={focus}
                   materials={materials}
                   onCreateRequisitionBackend={createRequisition}
+                  onSubmitRequisitionBackend={submitRequisition}
+                  onStartRequisitionReviewBackend={startRequisitionReview}
                   onApproveRequisitionBackend={approveRequisition}
+                  onRejectRequisitionBackend={rejectRequisition}
+                  onCancelRequisitionBackend={cancelRequisition}
                 />
               )}
               {tab === "quality" && (

@@ -91,23 +91,18 @@ export function adaptProject(p: BackendProject): ProjectMeta {
 }
 
 export function adaptRequisition(r: BackendMaterialRequest): Requisition {
-  const statusMap: Record<string, Requisition["status"]> = {
-    DRAFT: "Draft",
-    SUBMITTED: "Pending",
-    UNDER_REVIEW: "Pending",
-    APPROVED: "Approved",
-    REJECTED: "Rejected",
-    CANCELLED: "Rejected",
-  };
-
-  const isApproved = r.status === "APPROVED";
   const items = (r.items || []).map((item) => {
     const qty = Number(item.requestedQuantity || 0);
     const needDate = r.requiredDate ? r.requiredDate.slice(0, 10) : r.requestDate.slice(0, 10);
+    const material = item.material;
     return {
       materialId: item.materialId,
       qty,
       needDate,
+      name: material?.name,
+      unit: material?.unit?.symbol ?? material?.unit?.code,
+      unitPrice: item.estimatedUnitPrice != null ? Number(item.estimatedUnitPrice) : undefined,
+      remarks: item.remarks ?? undefined,
     };
   });
 
@@ -123,14 +118,14 @@ export function adaptRequisition(r: BackendMaterialRequest): Requisition {
     requestedBy: r.requester?.fullName || "Site Team",
     workPackage: "Superstructure" as WorkPackage,
     date: r.requestDate ? r.requestDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
-    status: statusMap[r.status] || "Draft",
-    approvalTrace: isApproved
-      ? ["Site Eng: approved", "PM: approved"]
-      : r.status === "SUBMITTED"
-      ? ["Site Eng: submitted, pending PM approval"]
-      : [],
-    siteEngSigned: Boolean(r.requestedBy),
-    pmSigned: isApproved,
+    requiredDate: r.requiredDate ? r.requiredDate.slice(0, 10) : undefined,
+    priority: r.priority,
+    purpose: r.purpose ?? undefined,
+    remarks: r.remarks ?? undefined,
+    status: r.status as Requisition["status"],
+    approvalTrace: [],
+    siteEngSigned: false,
+    pmSigned: r.status === "APPROVED",
     estimatedTotal: Math.round(estimatedTotal),
     items,
   };
