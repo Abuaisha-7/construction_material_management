@@ -22,6 +22,17 @@ import {
 } from "../services/dataAdapters";
 import { authService } from "../services/auth.service";
 
+export type RequisitionDraftItem = { materialId: string; qty: number; unitPrice?: number; name?: string; remarks?: string };
+
+export type MaterialRequestPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export interface CreateRequisitionOpts {
+  requiredDate?: string;
+  priority?: MaterialRequestPriority;
+  purpose?: string;
+  remarks?: string;
+}
+
 export interface AppDataContext {
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
@@ -31,7 +42,7 @@ export interface AppDataContext {
   error: string | null;
   activeProjectId: string | null;
   refreshAll: () => Promise<void>;
-  createRequisition: (items: { materialId: string; qty: number }[], remarks?: string) => Promise<boolean>;
+  createRequisition: (items: RequisitionDraftItem[], opts?: CreateRequisitionOpts) => Promise<Requisition | null>;
   approveRequisition: (id: string) => Promise<boolean>;
   rejectRequisition: (id: string, reason?: string) => Promise<boolean>;
   confirmGrn: (id: string) => Promise<boolean>;
@@ -163,37 +174,38 @@ export function useAppData(): AppDataContext {
   }, [refreshAll]);
 
   const createRequisition = async (
-    items: { materialId: string; qty: number }[],
-    remarks?: string
-  ): Promise<boolean> => {
+    items: RequisitionDraftItem[],
+    opts?: CreateRequisitionOpts
+  ): Promise<Requisition | null> => {
     if (!activeProjectId) {
       toast.error("No active project found in database to associate requisition with.");
-      return false;
+      return null;
     }
 
     try {
       const payload = {
         projectId: activeProjectId,
-        remarks: remarks || "Site material request",
-        items: items.map((it) => {
-          const mat = materials.find((m) => m.id === it.materialId);
-          return {
-            materialId: it.materialId,
-            requestedQuantity: it.qty,
-            estimatedUnitPrice: mat?.unitPrice || 0,
-            remarks: mat?.name,
-          };
-        }),
+        ...(opts?.requiredDate ? { requiredDate: opts.requiredDate } : {}),
+        ...(opts?.priority ? { priority: opts.priority } : {}),
+        ...(opts?.purpose ? { purpose: opts.purpose } : {}),
+        ...(opts?.remarks ? { remarks: opts.remarks } : {}),
+        items: items.map((it) => ({
+          materialId: it.materialId,
+          requestedQuantity: it.qty,
+          ...(it.unitPrice !== undefined ? { estimatedUnitPrice: it.unitPrice } : {}),
+          ...(it.remarks ? { remarks: it.remarks } : {}),
+        })),
       };
 
-      await requisitionService.createRequisition(payload);
+      const createdReq = await requisitionService.createRequisition(payload);
+      const adaptedReq = adaptRequisition(createdReq);
       toast.success("Requisition created in backend database!");
       await refreshAll();
-      return true;
+      return adaptedReq;
     } catch (err: any) {
       console.error("Failed to create requisition:", err);
       toast.error(err.message || "Failed to create requisition on backend");
-      return false;
+      return null;
     }
   };
 

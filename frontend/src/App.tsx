@@ -264,6 +264,7 @@ function App() {
                   state={state}
                   setState={setState}
                   role={role}
+                  project={project}
                   focus={focus}
                   materials={materials}
                   onCreateRequisitionBackend={createRequisition}

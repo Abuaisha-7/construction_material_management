@@ -59,7 +59,9 @@ function determineBinZone(catName?: string, matName?: string): BinZone {
 export function adaptMaterial(m: BackendMaterial): Material {
   const categoryName = m.category?.name || "General";
   const unitSymbol = m.unit?.symbol || m.unit?.code || "unit";
-  const unitPrice = Number(m.currentUnitPrice || m.estimatedUnitPrice || 0);
+  const currentPrice = Number(m.currentUnitPrice ?? 0);
+  const estimatedPrice = Number(m.estimatedUnitPrice ?? 0);
+  const unitPrice = !isNaN(currentPrice) && currentPrice > 0 ? currentPrice : estimatedPrice;
 
   return {
     id: m.id,
