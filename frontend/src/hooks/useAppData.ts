@@ -43,8 +43,11 @@ export interface AppDataContext {
   activeProjectId: string | null;
   refreshAll: () => Promise<void>;
   createRequisition: (items: RequisitionDraftItem[], opts?: CreateRequisitionOpts) => Promise<Requisition | null>;
-  approveRequisition: (id: string) => Promise<boolean>;
+  submitRequisition: (id: string) => Promise<boolean>;
+  startRequisitionReview: (id: string) => Promise<boolean>;
+  approveRequisition: (id: string, comments?: string) => Promise<boolean>;
   rejectRequisition: (id: string, reason?: string) => Promise<boolean>;
+  cancelRequisition: (id: string) => Promise<boolean>;
   confirmGrn: (id: string) => Promise<boolean>;
   completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
 }
@@ -209,9 +212,35 @@ export function useAppData(): AppDataContext {
     }
   };
 
-  const approveRequisition = async (id: string): Promise<boolean> => {
+  const submitRequisition = async (id: string): Promise<boolean> => {
     try {
-      await requisitionService.approveRequisition(id, "Approved by Project Manager");
+      await requisitionService.submitRequisition(id);
+      toast.success("Requisition submitted for approval!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to submit requisition:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to submit requisition");
+      return false;
+    }
+  };
+
+  const startRequisitionReview = async (id: string): Promise<boolean> => {
+    try {
+      await requisitionService.startRequisitionReview(id);
+      toast.success("Requisition moved to UNDER_REVIEW!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to start review:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to start review");
+      return false;
+    }
+  };
+
+  const approveRequisition = async (id: string, comments?: string): Promise<boolean> => {
+    try {
+      await requisitionService.approveRequisition(id, comments);
       toast.success("Requisition approved on backend!");
       await refreshAll();
       return true;
@@ -231,6 +260,19 @@ export function useAppData(): AppDataContext {
     } catch (err: any) {
       console.error("Failed to reject requisition:", err);
       toast.error(err.message || "Failed to reject requisition");
+      return false;
+    }
+  };
+
+  const cancelRequisition = async (id: string): Promise<boolean> => {
+    try {
+      await requisitionService.cancelRequisition(id);
+      toast.success("Requisition cancelled!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to cancel requisition:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to cancel requisition");
       return false;
     }
   };
@@ -278,8 +320,11 @@ export function useAppData(): AppDataContext {
     activeProjectId,
     refreshAll,
     createRequisition,
+    submitRequisition,
+    startRequisitionReview,
     approveRequisition,
     rejectRequisition,
+    cancelRequisition,
     confirmGrn,
     completeInspection,
   };

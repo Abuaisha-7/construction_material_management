@@ -26,7 +26,18 @@ export interface BackendMaterialRequest {
   requiredDate?: string | null;
   priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
   purpose?: string | null;
-  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status:
+    | "DRAFT"
+    | "SUBMITTED"
+    | "UNDER_REVIEW"
+    | "RETURNED"
+    | "APPROVED"
+    | "PARTIALLY_APPROVED"
+    | "REJECTED"
+    | "PARTIALLY_SUPPLIED"
+    | "FULLY_SUPPLIED"
+    | "COMPLETED"
+    | "CANCELLED";
   remarks?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -89,9 +100,14 @@ export const requisitionService = {
     return res.data;
   },
 
-  async approveRequisition(id: string, remarks?: string) {
+  async startRequisitionReview(id: string) {
+    const res = await api.post<ApiResponse<BackendMaterialRequest>>(`/api/material-requests/${id}/review`);
+    return res.data;
+  },
+
+  async approveRequisition(id: string, comments?: string) {
     const res = await api.post<ApiResponse<BackendMaterialRequest>>(`/api/material-requests/${id}/approve`, {
-      remarks,
+      comments,
     });
     return res.data;
   },

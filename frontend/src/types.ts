@@ -54,14 +54,39 @@ export interface Material {
   reorderPoint: number;
 }
 
+export type RequisitionStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "UNDER_REVIEW"
+  | "RETURNED"
+  | "APPROVED"
+  | "PARTIALLY_APPROVED"
+  | "REJECTED"
+  | "PARTIALLY_SUPPLIED"
+  | "FULLY_SUPPLIED"
+  | "COMPLETED"
+  | "CANCELLED";
+
 export interface Requisition {
   id: string;
   ref: string;
   requestedBy: string;
   workPackage: WorkPackage;
   date: string;
-  items: { materialId: string; qty: number; needDate: string }[];
-  status: "Draft" | "Pending" | "Approved" | "Rejected";
+  requiredDate?: string;
+  priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  purpose?: string;
+  remarks?: string;
+  items: {
+    materialId: string;
+    qty: number;
+    needDate: string;
+    unitPrice?: number;
+    name?: string;
+    unit?: string;
+    remarks?: string;
+  }[];
+  status: RequisitionStatus;
   approvalTrace: string[];
   siteEngSigned: boolean;
   pmSigned: boolean;

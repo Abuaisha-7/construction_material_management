@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import {
   Wallet, TrendingUp, ArrowUpRight, ArrowDownRight, Package, FlaskConical,
-  TriangleAlert, CircleCheckBig, MapPin, Calendar, ArrowRight,
+  TriangleAlert, CircleCheckBig, MapPin, Calendar,
 } from "lucide-react";
 import { PROJECT, etb, type AppState, type UserRole, type ProjectMeta, type Material, WORK_PACKAGES } from "../types";
 import { MATERIALS } from "../data/mockData";
@@ -67,7 +67,7 @@ export default function ProjectOverview({ state, role, project, materials }: Pro
     return m && i.quantity <= m.reorderPoint;
   });
   const pendingQc = state.inspections.filter((q) => q.status === "Pending Inspection");
-  const pendingMr = state.requisitions.filter((r) => r.status === "Pending");
+  const pendingMr = state.requisitions.filter((r) => r.status === "SUBMITTED" || r.status === "UNDER_REVIEW");
 
   const cards = [
     { label: "Total Budget", value: etb(budget), sub: currentProject.ref, icon: Wallet, tone: "text-slate-700 dark:text-slate-200", ring: "bg-slate-100 dark:bg-slate-800" },
