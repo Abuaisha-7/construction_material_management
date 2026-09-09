@@ -6,8 +6,10 @@ import type {
   Material,
   ProjectMeta,
   PurchaseOrder,
+  PurchaseOrderItem,
   QCInspection,
   Requisition,
+  Supplier,
   WorkPackage,
 } from "../types";
 import type { BackendMaterial } from "./material.service";
@@ -132,34 +134,68 @@ export function adaptRequisition(r: BackendMaterialRequest): Requisition {
 }
 
 export function adaptPurchaseOrder(po: BackendPurchaseOrder): PurchaseOrder {
-  const statusMap: Record<string, PurchaseOrder["status"]> = {
-    DRAFT: "Draft",
-    PENDING_APPROVAL: "Issued",
-    APPROVED: "Issued",
-    PARTIALLY_RECEIVED: "Shipped",
-    FULLY_RECEIVED: "Delivered",
-    CLOSED: "Closed",
-    CANCELLED: "Cancelled",
-  };
-
-  const items = (po.items || []).map((item) => ({
+  const items: PurchaseOrderItem[] = (po.items || []).map((item) => ({
     materialId: item.materialId,
     qty: Number(item.orderedQuantity || 0),
     unitPrice: Number(item.unitPrice || 0),
+    receivedQty:
+      item.receivedQuantity != null
+        ? Number(item.receivedQuantity)
+        : item.deliveredQuantity != null
+        ? Number(item.deliveredQuantity)
+        : undefined,
+    name: item.material?.name,
+    unit: (item.material as { unit?: { name?: string } } | undefined)?.unit?.name,
   }));
 
-  const total = Number(po.totalAmount || 0);
+  const supplier = po.supplier;
 
   return {
     id: po.id,
     ref: po.purchaseOrderNumber,
     requisitionRef: po.materialRequestId ? `REQ-${po.materialRequestId.slice(0, 8)}` : "Direct PO",
-    supplier: po.supplier?.companyName || "Approved Supplier",
+    materialRequestId: po.materialRequestId,
+    projectId: po.projectId,
+    supplierId: po.supplierId,
+    supplier: supplier?.companyName || "Unassigned supplier",
+    contactPerson: supplier?.contactPerson,
+    phone: supplier?.phone,
+    email: supplier?.email,
+    address: supplier?.address,
     date: po.orderDate ? po.orderDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+    expectedDeliveryDate: po.expectedDeliveryDate ? po.expectedDeliveryDate.slice(0, 10) : null,
+    deliveryTerms: po.remarks || "Standard site delivery",
+    remarks: po.remarks,
     items,
-    status: statusMap[po.status] || "Draft",
-    deliveryTerms: po.remarks || "Standard site delivery (FOB)",
-    total: Math.round(total),
+    status: po.status,
+    subtotal: Number(po.subtotal || 0),
+    taxAmount: Number(po.taxAmount || 0),
+    total: Math.round(Number(po.totalAmount || 0)),
+    currency: po.currency || "ETB",
+  };
+}
+
+export function adaptSupplier(s: {
+  id: string;
+  supplierCode: string;
+  companyName: string;
+  contactPerson?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  rating?: string | number | null;
+  isActive?: boolean;
+}): Supplier {
+  return {
+    id: s.id,
+    supplierCode: s.supplierCode,
+    companyName: s.companyName,
+    contactPerson: s.contactPerson,
+    phone: s.phone,
+    email: s.email,
+    address: s.address,
+    rating: s.rating != null ? Number(s.rating) : null,
+    isActive: s.isActive,
   };
 }
 

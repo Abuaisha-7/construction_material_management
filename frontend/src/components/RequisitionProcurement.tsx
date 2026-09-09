@@ -6,8 +6,8 @@ import {
   CircleCheck, Search, Sparkles, Eye,
 } from "lucide-react";
 import {
-  WORK_PACKAGES, etb, fmtQty, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition, type Material,
-  ProjectMeta,
+  WORK_PACKAGES, etb, etb2, fmtQty, type AppState, type UserRole, type PurchaseOrder as Purchy, type Requisition, type Material,
+  type Supplier, type ProjectMeta,
 } from "../types";
 import { MATERIALS } from "../data/mockData";
 import { materialService, type BackendCategory, type BackendMaterial, type BackendUnit } from "../services/material.service";
@@ -31,6 +31,7 @@ interface Props {
   project?: ProjectMeta;
   focus: string | null;
   materials?: Material[];
+  suppliers?: Supplier[];
   onCreateRequisitionBackend?: (
     items: MRItem[],
     opts?: { requiredDate?: string; priority?: MRPriority; purpose?: string; remarks?: string }
@@ -40,6 +41,27 @@ interface Props {
   onApproveRequisitionBackend?: (id: string, comments?: string) => Promise<boolean>;
   onRejectRequisitionBackend?: (id: string, reason?: string) => Promise<boolean>;
   onCancelRequisitionBackend?: (id: string) => Promise<boolean>;
+  onCreatePurchaseOrderBackend?: (
+    reqId: string,
+    opts: {
+      supplierId: string;
+      expectedDeliveryDate?: string;
+      remarks?: string;
+      items: { materialId: string; orderedQuantity: number; unitPrice: number }[];
+    }
+  ) => Promise<Purchy | null>;
+  onSubmitPurchaseOrderBackend?: (id: string) => Promise<boolean>;
+  onApprovePurchaseOrderBackend?: (id: string) => Promise<boolean>;
+  onCancelPurchaseOrderBackend?: (id: string, reason: string) => Promise<boolean>;
+  onClosePurchaseOrderBackend?: (id: string) => Promise<boolean>;
+  onCreateSupplierBackend?: (data: {
+    supplierCode: string;
+    companyName: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }) => Promise<Supplier | null>;
 }
 
 type Tab = "requisitions" | "pos";
@@ -427,50 +449,189 @@ function NewRequisitionModal({
   );
 }
 
-function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: Purchy) => void }) {
-  const [supplier, setSupplier] = useState("Dangote Cement PLC");
-  const [terms, setTerms] = useState("CFR site, 14 days");
-  const mode = req ? "requisition" : "ad-hoc";
-
-  const submit = () => {
-    const items = req
-      ? req.items.map((it) => {
-        const m = MATERIALS.find((x) => x.id === it.materialId) ?? { name: "Unknown material", unitPrice: 0 };
-        return { materialId: it.materialId, qty: it.qty, unitPrice: m.unitPrice };
+function NewPOModal({
+  req,
+  catalog,
+  suppliers,
+  busy,
+  onCreateSupplier,
+  onSubmit,
+  onClose,
+}: {
+  req: Requisition;
+  catalog: Material[];
+  suppliers: Supplier[];
+  busy: boolean;
+  onCreateSupplier: (data: {
+    supplierCode: string;
+    companyName: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+  }) => Promise<Supplier | null>;
+  onSubmit: (opts: {
+    supplierId: string;
+    expectedDeliveryDate?: string;
+    remarks?: string;
+    items: { materialId: string; orderedQuantity: number; unitPrice: number }[];
+  }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const byId = (id: string) => catalog.find((x) => x.id === id);
+  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
+  const [terms, setTerms] = useState("");
+  const [showNewSupplier, setShowNewSupplier] = useState(false);
+  const [nsBusy, setNsBusy] = useState(false);
+  const [nsForm, setNsForm] = useState({ supplierCode: "", companyName: "", contactPerson: "", phone: "", email: "" });
+  const [createdSuppliers, setCreatedSuppliers] = useState<Supplier[]>([]);
+  const [items, setItems] = useState(
+    () =>
+      req.items.map((it) => {
+        const m = byId(it.materialId);
+        const base = it.unitPrice != null && Number(it.unitPrice) > 0 ? Number(it.unitPrice) : m?.unitPrice ?? 0;
+        return { materialId: it.materialId, orderedQuantity: it.qty, unitPrice: base };
       })
-      : [{ materialId: MATERIALS[0].id, qty: 100, unitPrice: MATERIALS[0].unitPrice }];
-    const total = items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
-    const po: Purchy = {
-      id: "P" + Date.now(), ref: "PO-" + Math.floor(Math.random() * 90000) + 10000, requisitionRef: req ? req.ref : "AD-HOC",
-      supplier, date: new Date().toISOString().slice(0, 10), items, status: "Draft",
-      deliveryTerms: terms, total,
-    };
-    onSubmit(po);
+  );
+
+  const allSuppliers =
+    createdSuppliers.length > 0
+      ? [...createdSuppliers, ...suppliers.filter((s) => !createdSuppliers.some((c) => c.id === s.id))]
+      : suppliers;
+
+  const subtotal = items.reduce((s, it) => s + it.orderedQuantity * it.unitPrice, 0);
+  const tax = subtotal * 0.15;
+  const total = subtotal + tax;
+
+  const patchItem = (i: number, patch: Partial<{ orderedQuantity: number; unitPrice: number }>) => {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+  };
+
+  const createNewSupplier = async () => {
+    if (!nsForm.companyName.trim() || !nsForm.supplierCode.trim()) {
+      toast.error("Company name and supplier code are required.");
+      return;
+    }
+    setNsBusy(true);
+    try {
+      const created = await onCreateSupplier({
+        companyName: nsForm.companyName.trim(),
+        supplierCode: nsForm.supplierCode.trim().toUpperCase(),
+        contactPerson: nsForm.contactPerson.trim() || undefined,
+        phone: nsForm.phone.trim() || undefined,
+        email: nsForm.email.trim() || undefined,
+      });
+      if (created) {
+        setCreatedSuppliers((prev) => (prev.some((s) => s.id === created.id) ? prev : [created, ...prev]));
+        setSupplierId(created.id);
+        setShowNewSupplier(false);
+        setNsForm({ supplierCode: "", companyName: "", contactPerson: "", phone: "", email: "" });
+      }
+    } finally {
+      setNsBusy(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!supplierId) {
+      toast.error("Please select a supplier for this purchase order.");
+      return;
+    }
+    if (items.length === 0 || items.some((it) => it.orderedQuantity <= 0)) {
+      toast.error("Every line item needs a quantity greater than zero.");
+      return;
+    }
+    if (items.some((it) => it.unitPrice < 0)) {
+      toast.error("Unit prices cannot be negative.");
+      return;
+    }
+    await onSubmit({
+      supplierId,
+      expectedDeliveryDate: expectedDeliveryDate || undefined,
+      remarks: terms.trim() || undefined,
+      items: items.map((it) => ({ materialId: it.materialId, orderedQuantity: it.orderedQuantity, unitPrice: it.unitPrice })),
+    });
   };
 
   return (
     <div className="p-6">
-      <div className="text-lg font-bold tracking-tight">Issue Purchase Order</div>
-      <p className="text-xs text-muted-foreground">
-        {mode === "requisition" ? `Generated from ${req!.ref}` : "Ad-hoc purchase order"}
-      </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-lg font-bold tracking-tight">Create Purchase Order</div>
+          <p className="text-xs text-muted-foreground">
+            DRAFT PO generated from APPROVED requisition {req.ref}
+          </p>
+        </div>
+        <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent">
+          <X size={16} />
+        </button>
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="text-xs font-semibold text-muted-foreground">Supplier</label>
-          <select value={supplier} onChange={(e) => setSupplier(e.target.value)}
-            className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none">
-            <option>Dangote Cement PLC</option>
-            <option>Mugher Cement Enterprise</option>
-            <option>Akaki Steel PLC</option>
-            <option>Somali Aggregate Supply</option>
-            <option>Haramaya Fencing Co.</option>
-            <option>Jigjiga Building Mart</option>
-          </select>
+          <label className="text-xs font-semibold text-muted-foreground">
+            Supplier <span className="text-rose-500">*</span>
+          </label>
+          <div className="mt-1 flex gap-2">
+            <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
+              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none">
+              {allSuppliers.length === 0 && <option value="">No suppliers yet</option>}
+              {allSuppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.companyName} ({s.supplierCode})</option>
+              ))}
+            </select>
+            <button onClick={() => setShowNewSupplier((v) => !v)} disabled={nsBusy}
+              className="shrink-0 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-60">
+              <Plus size={13} className="mr-1 inline" /> New supplier
+            </button>
+          </div>
+
+          {showNewSupplier && (
+            <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[11px] font-semibold text-muted-foreground">Company Name *</label>
+                  <input value={nsForm.companyName} onChange={(e) => setNsForm({ ...nsForm, companyName: e.target.value })}
+                    className="mt-0.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground">Supplier Code *</label>
+                  <input value={nsForm.supplierCode} onChange={(e) => setNsForm({ ...nsForm, supplierCode: e.target.value })}
+                    placeholder="SUP-010"
+                    className="mt-0.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground">Contact Person</label>
+                  <input value={nsForm.contactPerson} onChange={(e) => setNsForm({ ...nsForm, contactPerson: e.target.value })}
+                    className="mt-0.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground">Phone</label>
+                  <input value={nsForm.phone} onChange={(e) => setNsForm({ ...nsForm, phone: e.target.value })}
+                    className="mt-0.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground">Email</label>
+                  <input value={nsForm.email} onChange={(e) => setNsForm({ ...nsForm, email: e.target.value })}
+                    className="mt-0.5 h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+                </div>
+              </div>
+              <button onClick={createNewSupplier} disabled={nsBusy}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-amber-500 dark:text-slate-950">
+                {nsBusy ? "Saving supplier…" : "Save supplier"}
+              </button>
+            </div>
+          )}
         </div>
-        <div className="col-span-2">
-          <label className="text-xs font-semibold text-muted-foreground">Delivery Terms</label>
-          <input value={terms} onChange={(e) => setTerms(e.target.value)}
+
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Expected Delivery</label>
+          <input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+            className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Delivery Terms / Remarks</label>
+          <input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="e.g. CFR site, 14 days"
             className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none" />
         </div>
       </div>
@@ -478,16 +639,36 @@ function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: 
       <div className="mt-4 overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-[11px] uppercase text-muted-foreground">
-            <tr><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-right">Qty</th><th className="px-3 py-2 text-right">Unit</th></tr>
+            <tr>
+              <th className="px-3 py-2 text-left">Item</th>
+              <th className="px-3 py-2 text-right">Unit</th>
+              <th className="px-3 py-2 text-right">Qty</th>
+              <th className="px-3 py-2 text-right">Unit Price</th>
+              <th className="px-3 py-2 text-right">Total</th>
+            </tr>
           </thead>
           <tbody>
-            {(req ? req.items : [{ materialId: MATERIALS[0].id, qty: 100 }]).map((it, i) => {
-              const m = MATERIALS.find((x) => x.id === it.materialId) ?? { name: "Unknown material", unitPrice: 0 };
+            {items.map((it, i) => {
+              const reqItem = req.items[i];
+              const m = byId(it.materialId);
               return (
                 <tr key={i} className="border-t border-border">
-                  <td className="px-3 py-2">{m.name}</td>
-                  <td className="px-3 py-2 text-right font-mono">{it.qty}</td>
-                  <td className="px-3 py-2 text-right font-mono">{etb(m.unitPrice)}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{reqItem?.name ?? m?.name ?? "Unknown material"}</div>
+                    <div className="text-[10px] text-muted-foreground">approved qty: {fmtQty(reqItem?.qty ?? it.orderedQuantity)} {m?.unit}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{m?.unit ?? "-"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <input type="number" min={1} value={it.orderedQuantity}
+                      onChange={(e) => patchItem(i, { orderedQuantity: Math.max(0, Number(e.target.value) || 0) })}
+                      className="h-7 w-20 rounded-md border border-input bg-background px-2 text-right font-mono text-xs outline-none" />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input type="number" min={0} value={it.unitPrice}
+                      onChange={(e) => patchItem(i, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
+                      className="h-7 w-24 rounded-md border border-input bg-background px-2 text-right font-mono text-xs outline-none" />
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{fmtQty(it.orderedQuantity * it.unitPrice)}</td>
                 </tr>
               );
             })}
@@ -495,21 +676,219 @@ function NewPOModal({ req, onSubmit }: { req: Requisition | null; onSubmit: (p: 
         </table>
       </div>
 
-      <div className="mt-3 text-right">
-        <span className="text-[11px] text-muted-foreground">PO Total · </span>
-        <span className="font-mono text-lg font-bold text-amber-600 dark:text-amber-400">
-          {etb(((req ? req.items : [{ materialId: MATERIALS[0].id, qty: 100 }]) as { materialId: string; qty: number }[]).reduce((s, it) => {
-            const m = MATERIALS.find((x) => x.id === it.materialId) ?? { name: "Unknown material", unitPrice: 0 }; return s + it.qty * m.unitPrice;
-          }, 0))}
-        </span>
+      <div className="mt-3 space-y-0.5 text-right text-xs text-muted-foreground">
+        <div>Subtotal · <span className="font-mono">{etb2(subtotal)}</span></div>
+        <div>VAT (15%) · <span className="font-mono">{etb2(tax)}</span></div>
+        <div className="text-sm font-semibold text-foreground">
+          PO Total · <span className="font-mono text-lg font-bold text-amber-600 dark:text-amber-400">{etb2(total)}</span>
+        </div>
       </div>
 
       <div className="mt-4 flex justify-end gap-2">
-        <button className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-        <button onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-amber-500 dark:text-slate-950">
-          <Truck size={15} /> Issue PO
+        <button onClick={onClose} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+        <button onClick={submit} disabled={busy}
+          className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-amber-500 dark:text-slate-950">
+          <Check size={15} /> {busy ? "Creating…" : "Save DRAFT PO"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function PurchaseOrderDetailModal({
+  p,
+  catalog,
+  reqs,
+  suppliers,
+  canAct,
+  busy,
+  onClose,
+  onSubmit,
+  onApprove,
+  onCancel,
+  onClosePO,
+}: {
+  p: Purchy;
+  catalog: Material[];
+  reqs: Requisition[];
+  suppliers: Supplier[];
+  canAct: boolean;
+  busy: { id: string; action: string } | null;
+  onClose: () => void;
+  onSubmit: (x: Purchy) => void;
+  onApprove: (x: Purchy) => void;
+  onCancel: (x: Purchy, reason: string) => void;
+  onClosePO: (x: Purchy) => void;
+}) {
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  const byId = (id: string) => catalog.find((x) => x.id === id);
+  const supplier = suppliers.find((s) => s.id === p.supplierId);
+  const mr = reqs.find((r) => r.id === p.materialRequestId);
+
+  const subtotal = p.subtotal ?? p.items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
+  const tax = p.taxAmount ?? subtotal * 0.15;
+  const total = p.total;
+
+  const submitCancel = () => {
+    if (!cancelReason.trim()) {
+      toast.error("A cancellation reason is required.");
+      return;
+    }
+    onCancel(p, cancelReason.trim());
+  };
+
+  const isBusy = (action: string) => busy?.id === p.id && busy.action === action;
+
+  return (
+    <div className="p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold tracking-tight">{p.ref}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[p.status]}`}>{p.status.replace(/_/g, " ")}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Purchase order {p.requisitionRef === "Direct PO" ? "· direct" : `from ${mr ? mr.ref : p.requisitionRef}`}
+          </p>
+        </div>
+        <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-border bg-muted/30 p-3">
+          <div className="text-[11px] font-bold uppercase text-muted-foreground">Supplier</div>
+          <div className="mt-1 text-sm font-semibold">{p.supplier}</div>
+          {supplier?.supplierCode && <div className="text-[11px] text-muted-foreground">Code: {supplier.supplierCode}</div>}
+          {(supplier?.contactPerson || p.contactPerson) && (
+            <div className="mt-1 text-xs text-muted-foreground">Contact: {supplier?.contactPerson ?? p.contactPerson}</div>
+          )}
+          {(supplier?.phone || p.phone) && (
+            <div className="text-xs text-muted-foreground">Phone: {supplier?.phone ?? p.phone}</div>
+          )}
+          {(supplier?.email || p.email) && (
+            <div className="text-xs text-muted-foreground">Email: {supplier?.email ?? p.email}</div>
+          )}
+          {(supplier?.address || p.address) && (
+            <div className="text-xs text-muted-foreground">Address: {supplier?.address ?? p.address}</div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-muted/30 p-3">
+          <div className="text-[11px] font-bold uppercase text-muted-foreground">Delivery</div>
+          <div className="mt-1 text-sm">Order date: <span className="font-mono">{p.date}</span></div>
+          {p.expectedDeliveryDate && (
+            <div className="text-sm">Expected: <span className="font-mono">{p.expectedDeliveryDate}</span></div>
+          )}
+          <div className="mt-1 text-xs text-muted-foreground">{p.deliveryTerms || "Standard site delivery"}</div>
+          {p.remarks && p.remarks !== p.deliveryTerms && (
+            <div className="mt-2 whitespace-pre-line rounded-md bg-background/60 p-2 text-[11px] text-muted-foreground">{p.remarks}</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-[11px] uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Material</th>
+              <th className="px-3 py-2 text-right">Unit</th>
+              <th className="px-3 py-2 text-right">Ordered</th>
+              <th className="px-3 py-2 text-right">Unit Price</th>
+              <th className="px-3 py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.items.map((it, i) => {
+              const m = byId(it.materialId);
+              return (
+                <tr key={i} className="border-t border-border">
+                  <td className="px-3 py-2">{it.name ?? m?.name ?? "Unknown material"}</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{it.unit ?? m?.unit ?? "-"}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmtQty(it.qty)}{it.receivedQty != null ? ` / ${fmtQty(it.receivedQty)} rcvd` : ""}</td>
+                  <td className="px-3 py-2 text-right font-mono">{etb2(it.unitPrice)}</td>
+                  <td className="px-3 py-2 text-right font-mono">{etb2(it.qty * it.unitPrice)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-3 space-y-0.5 text-right text-xs text-muted-foreground">
+        <div>Subtotal · <span className="font-mono">{etb2(subtotal)}</span> ({p.currency || "ETB"})</div>
+        <div>VAT (15%) · <span className="font-mono">{etb2(tax)}</span></div>
+        <div className="text-sm font-semibold text-foreground">
+          Total · <span className="font-mono text-lg font-bold text-amber-600 dark:text-amber-400">{etb2(total)}</span>
+        </div>
+      </div>
+
+      {mr && (
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Related material request</span>
+          <span className="font-semibold">{mr.ref} · <span className={`rounded-full px-1.5 py-0.5 ${STATUS_STYLE[mr.status]}`}>{mr.status}</span></span>
+        </div>
+      )}
+
+      {canAct && (
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
+          {p.status === "DRAFT" && (
+            <button onClick={() => onSubmit(p)} disabled={isBusy("po-submit")}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-amber-500 dark:text-slate-950">
+              <ArrowRight size={15} /> {isBusy("po-submit") ? "Submitting…" : "Submit for Approval"}
+            </button>
+          )}
+          {p.status === "PENDING_APPROVAL" && (
+            <>
+              <button onClick={() => onApprove(p)} disabled={isBusy("po-approve")}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">
+                <CircleCheck size={15} /> {isBusy("po-approve") ? "Approving…" : "Approve"}
+              </button>
+              <button onClick={() => setCancelOpen((v) => !v)} disabled={isBusy("po-cancel")}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent">
+                Cancel
+              </button>
+            </>
+          )}
+          {p.status === "APPROVED" && (
+            <button onClick={() => setCancelOpen((v) => !v)} disabled={isBusy("po-cancel")}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent">
+              Cancel
+            </button>
+          )}
+          {p.status === "PARTIALLY_RECEIVED" && (
+            <button onClick={() => setCancelOpen((v) => !v)} disabled={isBusy("po-cancel")}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent">
+              Cancel
+            </button>
+          )}
+          {p.status === "FULLY_RECEIVED" && (
+            <button onClick={() => onClosePO(p)} disabled={isBusy("po-close")}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-amber-500 dark:text-slate-950">
+              <CircleCheck size={15} /> {isBusy("po-close") ? "Closing…" : "Close PO"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {cancelOpen && (
+        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <label className="text-xs font-semibold text-foreground">Cancellation reason <span className="text-rose-500">*</span></label>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2}
+            placeholder="Required — recorded on the purchase order"
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none" />
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => { setCancelOpen(false); setCancelReason(""); }}
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-semibold hover:bg-accent">Back</button>
+            <button onClick={submitCancel} disabled={isBusy("po-cancel")}
+              className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60">
+              {isBusy("po-cancel") ? "Cancelling…" : "Confirm cancellation"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -754,16 +1133,24 @@ export default function RequisitionProcurement({
   role,
   focus,
   materials,
+  suppliers = [],
   onCreateRequisitionBackend,
   onSubmitRequisitionBackend,
   onStartRequisitionReviewBackend,
   onApproveRequisitionBackend,
   onRejectRequisitionBackend,
   onCancelRequisitionBackend,
+  onCreatePurchaseOrderBackend,
+  onSubmitPurchaseOrderBackend,
+  onApprovePurchaseOrderBackend,
+  onCancelPurchaseOrderBackend,
+  onClosePurchaseOrderBackend,
+  onCreateSupplierBackend,
 }: Props) {
   const [tab, setTab] = useState<Tab>(focus === "po" ? "pos" : "requisitions");
   const [showNew, setShowNew] = useState(false);
-  const [showPO, setShowPO] = useState<false | Requisition | "ad">(false);
+  const [showPO, setShowPO] = useState<Requisition | null>(null);
+  const [viewPO, setViewPO] = useState<Purchy | null>(null);
   const [viewReq, setViewReq] = useState<Requisition | null>(null);
   const [filter, setFilter] = useState("All");
   const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
@@ -825,12 +1212,51 @@ export default function RequisitionProcurement({
 
   const itemName = (it: Requisition["items"][number]) => it.name ?? byId(it.materialId)?.name ?? "Unknown material";
 
-  const togglePOStatus = (p: Purchy) => {
-    const order: Purchy["status"][] = ["Draft", "Issued", "Shipped", "Delivered", "Closed"];
-    const idx = order.indexOf(p.status);
-    const next = order[Math.min(idx + 1, order.length - 1)];
-    setState({ ...state, purchaseOrders: state.purchaseOrders.map((x) => (x.id === p.id ? { ...x, status: next } : x)) });
-    toast.success(`${p.ref} → ${next}`);
+  const canActPO = role === "Procurement Officer" || role === "Project Manager";
+
+  const addPO = async (opts: {
+    supplierId: string;
+    expectedDeliveryDate?: string;
+    remarks?: string;
+    items: { materialId: string; orderedQuantity: number; unitPrice: number }[];
+  }) => {
+    if (!showPO) return;
+    setBusy({ id: showPO.id, action: "po-create" });
+    try {
+      const created = onCreatePurchaseOrderBackend
+        ? await onCreatePurchaseOrderBackend(showPO.id, opts)
+        : null;
+      if (created) {
+        setShowPO(null);
+        setViewReq((v) => (v && v.id === showPO.id ? null : v));
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doSubmitPO = (p: Purchy) => {
+    if (!onSubmitPurchaseOrderBackend) return;
+    setBusy({ id: p.id, action: "po-submit" });
+    void onSubmitPurchaseOrderBackend(p.id).then((ok) => { if (ok) setViewPO(null); }).finally(() => setBusy(null));
+  };
+
+  const doApprovePO = (p: Purchy) => {
+    if (!onApprovePurchaseOrderBackend) return;
+    setBusy({ id: p.id, action: "po-approve" });
+    void onApprovePurchaseOrderBackend(p.id).then((ok) => { if (ok) setViewPO(null); }).finally(() => setBusy(null));
+  };
+
+  const doCancelPO = (p: Purchy, reason: string) => {
+    if (!onCancelPurchaseOrderBackend) return;
+    setBusy({ id: p.id, action: "po-cancel" });
+    void onCancelPurchaseOrderBackend(p.id, reason).then((ok) => { if (ok) setViewPO(null); }).finally(() => setBusy(null));
+  };
+
+  const doClosePO = (p: Purchy) => {
+    if (!onClosePurchaseOrderBackend) return;
+    setBusy({ id: p.id, action: "po-close" });
+    void onClosePurchaseOrderBackend(p.id).then((ok) => { if (ok) setViewPO(null); }).finally(() => setBusy(null));
   };
 
   const addReq = async (draft: MRDraft) => {
@@ -859,15 +1285,6 @@ export default function RequisitionProcurement({
     });
     setShowNew(false);
     toast.success(`${createdReq.ref} saved (${etb(createdReq.estimatedTotal)})`);
-  };
-
-  const addPO = (p: Purchy) => {
-    setState({
-      ...state,
-      purchaseOrders: [...state.purchaseOrders, p],
-    });
-    setShowPO(false);
-    toast.success(`${p.ref} issued to ${p.supplier}`);
   };
 
   return (
@@ -1024,9 +1441,9 @@ export default function RequisitionProcurement({
                 <span className="text-xs text-muted-foreground">PO vs GRN vs Invoice 3-way match enabled for Finance</span>
               </div>
               <div className="ml-auto">
-                <button onClick={() => setShowPO("ad" as unknown as Requisition)}
-                  className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-amber-500 dark:text-slate-950">
-                  <Plus size={15} /> New PO
+                <button onClick={() => setTab("requisitions")}
+                  className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-accent">
+                  <Plus size={15} /> Create from APPROVED MR
                 </button>
               </div>
             </div>
@@ -1034,14 +1451,18 @@ export default function RequisitionProcurement({
             <div className="grid gap-3 lg:grid-cols-3">
               {state.purchaseOrders.map((p) => {
                 const grnCount = state.grns.filter((g) => g.poRef === p.ref).length;
+                const poBusy = busy?.id === p.id;
                 return (
-                  <div key={p.id} className="rounded-xl border border-border bg-card p-4">
+                  <div key={p.id} onClick={() => setViewPO(p)}
+                    role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter") setViewPO(p); }}
+                    className="cursor-pointer rounded-xl border border-border bg-card p-4 transition hover:border-amber-300 hover:shadow-sm">
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="font-bold">{p.ref}</div>
                         <div className="text-[11px] text-muted-foreground">from {p.requisitionRef}</div>
                       </div>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[p.status]}`}>{p.status}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[p.status]}`}>{p.status.replace(/_/g, " ")}</span>
                     </div>
                     <div className="mt-2 flex items-center gap-1.5 text-sm font-medium">
                       <ShoppingCart size={14} className="text-muted-foreground" /> {p.supplier}
@@ -1058,22 +1479,51 @@ export default function RequisitionProcurement({
                       </span>
                       <span className="font-semibold">{grnCount > 0 ? `${grnCount} received` : "not received"}</span>
                     </div>
-                    {role === "Procurement Officer" &&
-                      p.status !== "Closed" &&
-                      p.status !== "CLOSED" &&
-                      p.status !== "Cancelled" &&
-                      p.status !== "CANCELLED" && (
-                        <button onClick={() => togglePOStatus(p)}
-                          className="mt-3 w-full rounded-lg border border-border py-1.5 text-xs font-semibold hover:bg-accent">
-                          Advance to next stage
-                        </button>
-                      )}
+
+                    {canActPO && (
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-1.5 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
+                        {p.status === "DRAFT" && (
+                          <button onClick={() => doSubmitPO(p)} disabled={poBusy}
+                            className="flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-950">
+                            <ArrowRight size={12} /> {poBusy && busy.action === "po-submit" ? "Submitting…" : "Submit"}
+                          </button>
+                        )}
+                        {p.status === "PENDING_APPROVAL" && (
+                          <>
+                            <button onClick={() => doApprovePO(p)} disabled={poBusy}
+                              className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+                              <CircleCheck size={12} /> {poBusy && busy.action === "po-approve" ? "Approving…" : "Approve"}
+                            </button>
+                            <button onClick={() => setViewPO(p)}
+                              className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent">
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                        {(p.status === "APPROVED" || p.status === "PARTIALLY_RECEIVED") && (
+                          <button onClick={() => setViewPO(p)}
+                            className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent">
+                            Cancel
+                          </button>
+                        )}
+                        {p.status === "FULLY_RECEIVED" && (
+                          <button onClick={() => doClosePO(p)} disabled={poBusy}
+                            className="flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-950">
+                            <CircleCheck size={12} /> {poBusy && busy.action === "po-close" ? "Closing…" : "Close"}
+                          </button>
+                        )}
+                        {(p.status === "CANCELLED" || p.status === "CLOSED") && (
+                          <span className="text-[11px] italic text-muted-foreground">No further actions</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
               {state.purchaseOrders.length === 0 && (
                 <div className="col-span-full flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-                  <ShoppingCart size={28} /> No purchase orders yet.
+                  <ShoppingCart size={28} />
+                  No purchase orders yet — create one from an APPROVED requisition.
                 </div>
               )}
             </div>
@@ -1081,20 +1531,28 @@ export default function RequisitionProcurement({
         )}
       </AnimatePresence>
 
-      {/* PO modal */}
+      {/* PO creation modal (from APPROVED MR) */}
       <AnimatePresence>
         {showPO && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-            onClick={() => setShowPO(false)}
+            onClick={() => setShowPO(null)}
           >
             <motion.div
               initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
             >
-              <NewPOModal req={showPO && showPO !== "ad" ? showPO : null} onSubmit={addPO} />
+              <NewPOModal
+                req={showPO}
+                catalog={catalog}
+                suppliers={suppliers}
+                busy={busy?.id === showPO.id && busy.action === "po-create"}
+                onCreateSupplier={onCreateSupplierBackend ? (d) => onCreateSupplierBackend!(d) : async () => null}
+                onSubmit={addPO}
+                onClose={() => setShowPO(null)}
+              />
             </motion.div>
           </motion.div>
         )}
@@ -1128,6 +1586,37 @@ export default function RequisitionProcurement({
                   setShowPO(x);
                   setViewReq(null);
                 }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PO detail / review modal */}
+      <AnimatePresence>
+        {viewPO && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={() => setViewPO(null)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
+            >
+              <PurchaseOrderDetailModal
+                p={viewPO}
+                catalog={catalog}
+                reqs={state.requisitions}
+                suppliers={suppliers}
+                canAct={canActPO}
+                busy={busy}
+                onClose={() => setViewPO(null)}
+                onSubmit={(x) => doSubmitPO(x)}
+                onApprove={(x) => doApprovePO(x)}
+                onCancel={(x, reason) => doCancelPO(x, reason)}
+                onClosePO={(x) => doClosePO(x)}
               />
             </motion.div>
           </motion.div>
