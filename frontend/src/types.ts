@@ -102,23 +102,49 @@ export type PurchaseOrderStatus =
   | "CANCELLED"
   | "CLOSED";
 
+export interface PurchaseOrderItem {
+  materialId: string;
+  qty: number;
+  unitPrice: number;
+  receivedQty?: number;
+  name?: string;
+  unit?: string;
+}
+
 export interface PurchaseOrder {
   id: string;
   ref: string;
   requisitionRef: string;
+  projectId?: string;
+  materialRequestId?: string | null;
+  supplierId?: string;
   supplier: string;
+  contactPerson?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
   date: string;
-  items: { materialId: string; qty: number; unitPrice: number }[];
-  status:
-    | PurchaseOrderStatus
-    | "Draft"
-    | "Issued"
-    | "Shipped"
-    | "Delivered"
-    | "Closed"
-    | "Cancelled";
+  expectedDeliveryDate?: string | null;
   deliveryTerms: string;
+  remarks?: string | null;
+  items: PurchaseOrderItem[];
+  status: PurchaseOrderStatus;
+  subtotal?: number;
+  taxAmount?: number;
   total: number;
+  currency?: string;
+}
+
+export interface Supplier {
+  id: string;
+  supplierCode: string;
+  companyName: string;
+  contactPerson?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  rating?: number | null;
+  isActive?: boolean;
 }
 
 export interface GRN {

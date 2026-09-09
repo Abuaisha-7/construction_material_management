@@ -35,6 +35,7 @@ function App() {
     setState,
     materials,
     project,
+    suppliers,
     loading,
     error,
     refreshAll,
@@ -44,6 +45,12 @@ function App() {
     approveRequisition,
     rejectRequisition,
     cancelRequisition,
+    createPurchaseOrder,
+    submitPurchaseOrder,
+    approvePurchaseOrder,
+    cancelPurchaseOrder,
+    closePurchaseOrder,
+    createSupplier,
     confirmGrn,
     completeInspection,
   } = useAppData();
@@ -271,12 +278,19 @@ function App() {
                   project={project}
                   focus={focus}
                   materials={materials}
+                  suppliers={suppliers}
                   onCreateRequisitionBackend={createRequisition}
                   onSubmitRequisitionBackend={submitRequisition}
                   onStartRequisitionReviewBackend={startRequisitionReview}
                   onApproveRequisitionBackend={approveRequisition}
                   onRejectRequisitionBackend={rejectRequisition}
                   onCancelRequisitionBackend={cancelRequisition}
+                  onCreatePurchaseOrderBackend={createPurchaseOrder}
+                  onSubmitPurchaseOrderBackend={submitPurchaseOrder}
+                  onApprovePurchaseOrderBackend={approvePurchaseOrder}
+                  onCancelPurchaseOrderBackend={cancelPurchaseOrder}
+                  onClosePurchaseOrderBackend={closePurchaseOrder}
+                  onCreateSupplierBackend={createSupplier}
                 />
               )}
               {tab === "quality" && (

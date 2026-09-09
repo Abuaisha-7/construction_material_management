@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { AppState, Material, ProjectMeta } from "../types";
+import type { AppState, Material, ProjectMeta, PurchaseOrder, Requisition, Supplier } from "../types";
 import { PROJECT as STATIC_PROJECT } from "../types";
 import { buildSeedState, MATERIALS as STATIC_MATERIALS } from "../data/mockData";
 import { materialService, type BackendMaterial } from "../services/material.service";
@@ -19,6 +19,7 @@ import {
   adaptProject,
   adaptPurchaseOrder,
   adaptRequisition,
+  adaptSupplier,
 } from "../services/dataAdapters";
 import { authService } from "../services/auth.service";
 
@@ -38,6 +39,7 @@ export interface AppDataContext {
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   materials: Material[];
   project: ProjectMeta;
+  suppliers: Supplier[];
   loading: boolean;
   error: string | null;
   activeProjectId: string | null;
@@ -48,6 +50,27 @@ export interface AppDataContext {
   approveRequisition: (id: string, comments?: string) => Promise<boolean>;
   rejectRequisition: (id: string, reason?: string) => Promise<boolean>;
   cancelRequisition: (id: string) => Promise<boolean>;
+  createPurchaseOrder: (
+    reqId: string,
+    opts: {
+      supplierId: string;
+      expectedDeliveryDate?: string;
+      remarks?: string;
+      items: { materialId: string; orderedQuantity: number; unitPrice: number }[];
+    }
+  ) => Promise<PurchaseOrder | null>;
+  submitPurchaseOrder: (id: string) => Promise<boolean>;
+  approvePurchaseOrder: (id: string) => Promise<boolean>;
+  cancelPurchaseOrder: (id: string, reason: string) => Promise<boolean>;
+  closePurchaseOrder: (id: string) => Promise<boolean>;
+  createSupplier: (data: {
+    supplierCode: string;
+    companyName: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }) => Promise<Supplier | null>;
   confirmGrn: (id: string) => Promise<boolean>;
   completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
 }
@@ -56,6 +79,7 @@ export function useAppData(): AppDataContext {
   const [state, setState] = useState<AppState>(() => buildSeedState());
   const [materials, setMaterials] = useState<Material[]>(STATIC_MATERIALS);
   const [project, setProject] = useState<ProjectMeta>(STATIC_PROJECT);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,14 +115,19 @@ export function useAppData(): AppDataContext {
       }
 
       // 2. Fetch operational data
-      const [reqsRes, posRes, grnsRes, inspRes, invRes, issuesRes] = await Promise.allSettled([
+      const [reqsRes, posRes, grnsRes, inspRes, invRes, issuesRes, suppliersRes] = await Promise.allSettled([
         requisitionService.getRequisitions({ limit: 50 }),
         purchaseOrderService.getPurchaseOrders({ limit: 50 }),
         grnService.getGrns({ limit: 50 }),
         inspectionService.getInspections({ limit: 50 }),
         inventoryService.getInventoryBalances({ limit: 100 }),
         inventoryService.getMaterialIssues({ limit: 50 }),
+        purchaseOrderService.getSuppliers(),
       ]);
+
+      if (suppliersRes.status === "fulfilled" && suppliersRes.value?.length > 0) {
+        setSuppliers(suppliersRes.value.map(adaptSupplier));
+      }
 
       setState((prev) => {
         const baseline = buildSeedState();
@@ -277,6 +306,125 @@ export function useAppData(): AppDataContext {
     }
   };
 
+  const createPurchaseOrder = async (
+    reqId: string,
+    opts: {
+      supplierId: string;
+      expectedDeliveryDate?: string;
+      remarks?: string;
+      items: { materialId: string; orderedQuantity: number; unitPrice: number }[];
+    }
+  ): Promise<PurchaseOrder | null> => {
+    if (!activeProjectId) {
+      toast.error("No active project found in database to associate the purchase order with.");
+      return null;
+    }
+
+    if (!opts.supplierId) {
+      toast.error("Please select a supplier for the purchase order.");
+      return null;
+    }
+
+    if (!opts.items || opts.items.length === 0) {
+      toast.error("Purchase order must contain at least one item.");
+      return null;
+    }
+
+    try {
+      const payload = {
+        projectId: activeProjectId,
+        supplierId: opts.supplierId,
+        materialRequestId: reqId,
+        ...(opts.expectedDeliveryDate ? { expectedDeliveryDate: opts.expectedDeliveryDate } : {}),
+        ...(opts.remarks ? { remarks: opts.remarks } : {}),
+        items: opts.items,
+      };
+
+      const created = await purchaseOrderService.createPurchaseOrder(payload);
+      const adapted = adaptPurchaseOrder(created);
+      toast.success("Purchase order created as DRAFT on backend!");
+      await refreshAll();
+      return adapted;
+    } catch (err: unknown) {
+      console.error("Failed to create purchase order:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to create purchase order on backend");
+      return null;
+    }
+  };
+
+  const submitPurchaseOrder = async (id: string): Promise<boolean> => {
+    try {
+      await purchaseOrderService.submitPurchaseOrder(id);
+      toast.success("Purchase order submitted for approval!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to submit purchase order:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to submit purchase order");
+      return false;
+    }
+  };
+
+  const approvePurchaseOrder = async (id: string): Promise<boolean> => {
+    try {
+      await purchaseOrderService.approvePurchaseOrder(id);
+      toast.success("Purchase order approved on backend!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to approve purchase order:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to approve purchase order");
+      return false;
+    }
+  };
+
+  const cancelPurchaseOrder = async (id: string, reason: string): Promise<boolean> => {
+    try {
+      await purchaseOrderService.cancelPurchaseOrder(id, reason);
+      toast.info("Purchase order cancelled on backend.");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to cancel purchase order:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to cancel purchase order");
+      return false;
+    }
+  };
+
+  const closePurchaseOrder = async (id: string): Promise<boolean> => {
+    try {
+      await purchaseOrderService.closePurchaseOrder(id);
+      toast.success("Purchase order closed on backend!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to close purchase order:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to close purchase order");
+      return false;
+    }
+  };
+
+  const createSupplier = async (data: {
+    supplierCode: string;
+    companyName: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }): Promise<Supplier | null> => {
+    try {
+      const created = await purchaseOrderService.createSupplier(data);
+      const adapted = adaptSupplier(created);
+      setSuppliers((prev) => (prev.some((s) => s.id === adapted.id) ? prev : [adapted, ...prev]));
+      toast.success("Supplier created on backend database!");
+      return adapted;
+    } catch (err: unknown) {
+      console.error("Failed to create supplier:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to create supplier on backend");
+      return null;
+    }
+  };
+
   const confirmGrn = async (id: string): Promise<boolean> => {
     try {
       await grnService.confirmGrn(id);
@@ -315,6 +463,7 @@ export function useAppData(): AppDataContext {
     setState,
     materials,
     project,
+    suppliers,
     loading,
     error,
     activeProjectId,
@@ -325,6 +474,12 @@ export function useAppData(): AppDataContext {
     approveRequisition,
     rejectRequisition,
     cancelRequisition,
+    createPurchaseOrder,
+    submitPurchaseOrder,
+    approvePurchaseOrder,
+    cancelPurchaseOrder,
+    closePurchaseOrder,
+    createSupplier,
     confirmGrn,
     completeInspection,
   };

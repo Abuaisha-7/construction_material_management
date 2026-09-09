@@ -62,19 +62,19 @@ const REQS: Requisition[] = [
 const POS: PurchaseOrder[] = [
   {
     id: "P1", ref: "PO-2025-118", requisitionRef: "MR-2025-041", supplier: "Somali Aggregate Supply",
-    date: "2025-06-05", status: "Delivered",
+    date: "2025-06-05", status: "FULLY_RECEIVED",
     items: [{ materialId: "M08", qty: 60, unitPrice: 1850 }, { materialId: "M09", qty: 55, unitPrice: 2450 }, { materialId: "M10", qty: 50, unitPrice: 2380 }],
     deliveryTerms: "FOB Jigjiga, 7 days", total: 371900,
   },
   {
     id: "P2", ref: "PO-2025-121", requisitionRef: "MR-2025-042", supplier: "Dangote Cement PLC",
-    date: "2025-06-10", status: "Shipped",
+    date: "2025-06-10", status: "PARTIALLY_RECEIVED",
     items: [{ materialId: "M01", qty: 320, unitPrice: 880 }, { materialId: "M04", qty: 9, unitPrice: 110500 }],
     deliveryTerms: "CFR site, 14 days", total: 1275600,
   },
   {
     id: "P3", ref: "PO-2025-124", requisitionRef: "MR-2025-044", supplier: "Haramaya Fencing Co.",
-    date: "2025-06-20", status: "Issued",
+    date: "2025-06-20", status: "PENDING_APPROVAL",
     items: [{ materialId: "M13", qty: 18, unitPrice: 9200 }, { materialId: "M18", qty: 1600, unitPrice: 12 }],
     deliveryTerms: "FOB site yard", total: 184800,
   },

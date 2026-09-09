@@ -26,7 +26,7 @@ export default function ProjectOverview({ state, role, project, materials }: Pro
   //
   // 1. Invoiced: POs that are completed, billed, and closed
   const invoiced = state.purchaseOrders
-    .filter((p) => p.status === "CLOSED" || p.status === "Closed")
+    .filter((p) => p.status === "CLOSED")
     .reduce((s, p) => s + p.total, 0);
 
   // 2. Committed: Active purchase orders placed with suppliers
@@ -36,10 +36,7 @@ export default function ProjectOverview({ state, role, project, materials }: Pro
       p.status === "APPROVED" ||
       p.status === "PARTIALLY_RECEIVED" ||
       p.status === "FULLY_RECEIVED" ||
-      p.status === "PENDING_APPROVAL" ||
-      p.status === "Issued" ||
-      p.status === "Shipped" ||
-      p.status === "Delivered"
+      p.status === "PENDING_APPROVAL"
     )
     .reduce((s, p) => s + p.total, 0);
 
@@ -53,13 +50,10 @@ export default function ProjectOverview({ state, role, project, materials }: Pro
       "PARTIALLY_RECEIVED",
       "FULLY_RECEIVED",
       "PENDING_APPROVAL",
-      "Issued",
-      "Shipped",
-      "Delivered",
     ].includes(p.status)
   ).length;
   const closedOrdersCount = state.purchaseOrders.filter(
-    (p) => p.status === "CLOSED" || p.status === "Closed"
+    (p) => p.status === "CLOSED"
   ).length;
 
   const warnItems = state.inventory.filter((i) => {

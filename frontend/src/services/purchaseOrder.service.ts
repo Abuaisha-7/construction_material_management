@@ -9,6 +9,7 @@ export interface BackendPoItem {
   unitPrice: string | number;
   totalPrice: string | number;
   deliveredQuantity?: string | number | null;
+  receivedQuantity?: string | number | null;
   material?: BackendMaterial;
 }
 
@@ -117,8 +118,21 @@ export const purchaseOrderService = {
     return res.data;
   },
 
-  async cancelPurchaseOrder(id: string) {
-    const res = await api.post<ApiResponse<BackendPurchaseOrder>>(`/api/purchase-orders/${id}/cancel`);
+  async cancelPurchaseOrder(id: string, reason: string) {
+    const res = await api.post<ApiResponse<BackendPurchaseOrder>>(`/api/purchase-orders/${id}/cancel`, { reason });
+    return res.data;
+  },
+
+  async createSupplier(payload: {
+    supplierCode: string;
+    companyName: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    isActive?: boolean;
+  }) {
+    const res = await api.post<ApiResponse<BackendSupplier>>("/api/suppliers", payload);
     return res.data;
   },
 };
