@@ -52,6 +52,8 @@ function App() {
     closePurchaseOrder,
     createSupplier,
     confirmGrn,
+    rejectGrn,
+    createGrn,
     completeInspection,
   } = useAppData();
 
@@ -300,7 +302,10 @@ function App() {
                   role={role}
                   focus={focus}
                   materials={materials}
+                  suppliers={suppliers}
                   onConfirmGrnBackend={confirmGrn}
+                  onRejectGrnBackend={rejectGrn}
+                  onCreateGrnBackend={createGrn}
                   onCompleteInspectionBackend={completeInspection}
                 />
               )}
