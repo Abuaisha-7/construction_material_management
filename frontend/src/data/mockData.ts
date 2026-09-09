@@ -83,15 +83,24 @@ const POS: PurchaseOrder[] = [
 const GRNS: GRN[] = [
   {
     id: "G1", ref: "GRN-2025-077", poRef: "PO-2025-118", supplier: "Somali Aggregate Supply",
-    date: "2025-06-16", waybill: "WB-88231", truckPlate: "AB 3-88412",
-    items: [{ materialId: "M08", qty: 58, condition: "Good" }, { materialId: "M09", qty: 52, condition: "Good" }, { materialId: "M10", qty: 47, condition: "Good" }],
-    status: "Pending QC", receivedBy: "Storekeeper A. Hamza",
+    date: "2025-06-16", waybill: "WB-88231", truckPlate: "AB 3-88412", receivedBy: "Storekeeper A. Hamza",
+    items: [
+      { materialId: "M08", name: "River Sand (Fafan)", unit: "m³", deliveredQty: 58, damagedQty: 0, rejectedQty: 0, acceptedQty: 58 },
+      { materialId: "M09", name: "Basalt Aggregate 01", unit: "m³", deliveredQty: 52, damagedQty: 0, rejectedQty: 0, acceptedQty: 52 },
+      { materialId: "M10", name: "Basalt Aggregate 02", unit: "m³", deliveredQty: 47, damagedQty: 0, rejectedQty: 0, acceptedQty: 47 },
+    ],
+    status: "AWAITING_INSPECTION",
   },
   {
     id: "G2", ref: "GRN-2025-078", poRef: "PO-2025-118", supplier: "Somali Aggregate Supply",
-    date: "2025-06-17", waybill: "WB-88240", truckPlate: "AG 2-11903",
-    items: [{ materialId: "M08", qty: 2, condition: "Short" }, { materialId: "M09", qty: 3, condition: "Short" }, { materialId: "M10", qty: 3, condition: "Short" }],
-    status: "Logged", receivedBy: "Storekeeper A. Hamza",
+    date: "2025-06-17", waybill: "WB-88240", truckPlate: "AG 2-11903", receivedBy: "Storekeeper A. Hamza",
+    remarks: "Short-supplied quantities flagged on delivery.",
+    items: [
+      { materialId: "M08", name: "River Sand (Fafan)", unit: "m³", deliveredQty: 2, damagedQty: 0, rejectedQty: 2, acceptedQty: 0 },
+      { materialId: "M09", name: "Basalt Aggregate 01", unit: "m³", deliveredQty: 3, damagedQty: 0, rejectedQty: 3, acceptedQty: 0 },
+      { materialId: "M10", name: "Basalt Aggregate 02", unit: "m³", deliveredQty: 3, damagedQty: 0, rejectedQty: 3, acceptedQty: 0 },
+    ],
+    status: "DRAFT",
   },
 ];
 

@@ -146,6 +146,7 @@ export function adaptPurchaseOrder(po: BackendPurchaseOrder): PurchaseOrder {
         : undefined,
     name: item.material?.name,
     unit: (item.material as { unit?: { name?: string } } | undefined)?.unit?.name,
+    unitId: (item.material as { unitId?: string } | undefined)?.unitId,
   }));
 
   const supplier = po.supplier;
@@ -200,40 +201,47 @@ export function adaptSupplier(s: {
 }
 
 export function adaptGrn(g: BackendGrn): GRN {
-  const statusMap: Record<string, GRN["status"]> = {
-    DRAFT: "Logged",
-    SUBMITTED: "Pending QC",
-    INSPECTED: "Pending QC",
-    CONFIRMED: "Completed",
-    REJECTED: "Logged",
-  };
+  const items: GRN["items"] = (g.items || []).map((item) => ({
+    materialId: item.materialId,
+    name: item.material?.name,
+    unit: item.unit?.symbol || item.unit?.code || item.unit?.name,
+    orderedQty:
+      item.orderedQuantity != null ? Number(item.orderedQuantity) : undefined,
+    deliveredQty: Number(item.deliveredQuantity || 0),
+    damagedQty: Number(item.damagedQuantity || 0),
+    rejectedQty: Number(item.rejectedQuantity || 0),
+    acceptedQty: Number(item.acceptedQuantity || 0),
+    batchNumber: item.batchNumber ?? undefined,
+    manufacturingDate: item.manufacturingDate
+      ? item.manufacturingDate.slice(0, 10)
+      : undefined,
+    expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : undefined,
+    remarks: item.remarks ?? undefined,
+  }));
 
-  const items = (g.items || []).map((item) => {
-    const damaged = Number(item.damagedQuantity || 0);
-    const rejected = Number(item.rejectedQuantity || 0);
-    let condition: "Good" | "Damaged" | "Short" = "Good";
-    if (damaged > 0 || rejected > 0) {
-      condition = "Damaged";
-    }
-
-    return {
-      materialId: item.materialId,
-      qty: Number(item.acceptedQuantity || item.deliveredQuantity || 0),
-      condition,
-    };
-  });
+  const poItems = (g.purchaseOrder?.items || []).map((poItem) => ({
+    materialId: poItem.materialId,
+    orderedQuantity: Number(poItem.orderedQuantity || 0),
+    unitPrice: Number(poItem.unitPrice || 0),
+  }));
 
   return {
     id: g.id,
     ref: g.grnNumber,
-    poRef: g.purchaseOrder?.purchaseOrderNumber || "PO-REF",
+    poRef: g.purchaseOrder?.purchaseOrderNumber,
     supplier: g.supplier?.companyName || "Vendor",
-    date: g.receivedDate ? g.receivedDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
-    waybill: g.deliveryNoteNumber || "WB-PENDING",
-    truckPlate: g.truckNumber || "TRUCK-01",
+    projectId: g.projectId,
+    supplierId: g.supplierId,
+    purchaseOrderId: g.purchaseOrderId ?? undefined,
+    date: g.deliveryDate ? g.deliveryDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+    waybill: g.deliveryNoteNumber ?? undefined,
+    truckPlate: g.vehicleNumber ?? undefined,
+    driverName: g.driverName ?? undefined,
+    receivedBy: g.receiver?.fullName ?? undefined,
+    remarks: g.remarks ?? undefined,
     items,
-    status: statusMap[g.status] || "Logged",
-    receivedBy: g.receiver?.fullName || "Storekeeper",
+    status: g.status,
+    poItems,
   };
 }
 

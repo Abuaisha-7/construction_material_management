@@ -72,6 +72,26 @@ export interface AppDataContext {
     address?: string;
   }) => Promise<Supplier | null>;
   confirmGrn: (id: string) => Promise<boolean>;
+  rejectGrn: (id: string, reason: string) => Promise<boolean>;
+  createGrn: (payload: {
+    projectId: string;
+    supplierId: string;
+    purchaseOrderId: string;
+    deliveryDate: string;
+    deliveryNoteNumber?: string;
+    vehicleNumber?: string;
+    driverName?: string;
+    remarks?: string;
+    items: {
+      materialId: string;
+      deliveredQuantity: number;
+      damagedQuantity?: number;
+      rejectedQuantity?: number;
+      unitId: string;
+      batchNumber?: string;
+      remarks?: string;
+    }[];
+  }) => Promise<boolean>;
   completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
 }
 
@@ -118,7 +138,7 @@ export function useAppData(): AppDataContext {
       const [reqsRes, posRes, grnsRes, inspRes, invRes, issuesRes, suppliersRes] = await Promise.allSettled([
         requisitionService.getRequisitions({ limit: 50 }),
         purchaseOrderService.getPurchaseOrders({ limit: 50 }),
-        grnService.getGrns({ limit: 50 }),
+        grnService.getGrns(),
         inspectionService.getInspections({ limit: 50 }),
         inventoryService.getInventoryBalances({ limit: 100 }),
         inventoryService.getMaterialIssues({ limit: 50 }),
@@ -438,6 +458,50 @@ export function useAppData(): AppDataContext {
     }
   };
 
+  const createGrn = async (payload: {
+    projectId: string;
+    supplierId: string;
+    purchaseOrderId: string;
+    deliveryDate: string;
+    deliveryNoteNumber?: string;
+    vehicleNumber?: string;
+    driverName?: string;
+    remarks?: string;
+    items: {
+      materialId: string;
+      deliveredQuantity: number;
+      damagedQuantity?: number;
+      rejectedQuantity?: number;
+      unitId: string;
+      batchNumber?: string;
+      remarks?: string;
+    }[];
+  }): Promise<boolean> => {
+    try {
+      await grnService.createGrn(payload);
+      toast.success("GRN logged as DRAFT on backend!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to create GRN:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to create GRN on backend");
+      return false;
+    }
+  };
+
+  const rejectGrn = async (id: string, reason: string): Promise<boolean> => {
+    try {
+      await grnService.rejectGrn(id, reason);
+      toast.success("GRN rejected on backend.");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to reject GRN:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to reject GRN");
+      return false;
+    }
+  };
+
   const completeInspection = async (
     id: string,
     result: "ACCEPTED" | "REJECTED" | "QUARANTINED",
@@ -481,6 +545,8 @@ export function useAppData(): AppDataContext {
     closePurchaseOrder,
     createSupplier,
     confirmGrn,
+    rejectGrn,
+    createGrn,
     completeInspection,
   };
 }

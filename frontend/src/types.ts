@@ -109,6 +109,7 @@ export interface PurchaseOrderItem {
   receivedQty?: number;
   name?: string;
   unit?: string;
+  unitId?: string;
 }
 
 export interface PurchaseOrder {
@@ -147,17 +148,47 @@ export interface Supplier {
   isActive?: boolean;
 }
 
+export type GrnStatus =
+  | "DRAFT"
+  | "AWAITING_INSPECTION"
+  | "PARTIALLY_ACCEPTED"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "POSTED"
+  | "CANCELLED";
+
+export interface GRNItem {
+  materialId: string;
+  name?: string;
+  unit?: string;
+  orderedQty?: number;
+  deliveredQty: number;
+  damagedQty?: number;
+  rejectedQty?: number;
+  acceptedQty?: number;
+  batchNumber?: string;
+  manufacturingDate?: string;
+  expiryDate?: string;
+  remarks?: string;
+}
+
 export interface GRN {
   id: string;
   ref: string;
-  poRef: string;
+  poRef?: string;
   supplier: string;
+  projectId?: string;
+  supplierId?: string;
+  purchaseOrderId?: string;
   date: string;
-  waybill: string;
-  truckPlate: string;
-  items: { materialId: string; qty: number; condition: "Good" | "Damaged" | "Short" }[];
-  status: "Logged" | "Pending QC" | "Completed";
-  receivedBy: string;
+  waybill?: string;
+  truckPlate?: string;
+  driverName?: string;
+  receivedBy?: string;
+  remarks?: string;
+  items: GRNItem[];
+  status: GrnStatus;
+  poItems?: { materialId: string; orderedQuantity: number; unitPrice: number }[];
 }
 
 export interface QCInspection {

@@ -1,24 +1,30 @@
 import { api, type ApiResponse } from "./api";
-import type { BackendMaterial } from "./material.service";
-import type { BackendSupplier } from "./purchaseOrder.service";
+import type { BackendMaterial, BackendUnit } from "./material.service";
+import type { BackendPurchaseOrder, BackendSupplier } from "./purchaseOrder.service";
+import type { GrnStatus } from "../types";
 
 export interface BackendGrnItem {
   id: string;
   grnId: string;
   materialId: string;
-  orderedQuantity: string | number;
+  orderedQuantity?: string | number | null;
   deliveredQuantity: string | number;
+  damagedQuantity: string | number;
+  rejectedQuantity: string | number;
   acceptedQuantity: string | number;
-  damagedQuantity?: string | number;
-  rejectedQuantity?: string | number;
+  unitId: string;
   batchNumber?: string | null;
+  manufacturingDate?: string | null;
+  expiryDate?: string | null;
   storageLocationId?: string | null;
   remarks?: string | null;
   material?: BackendMaterial;
-  unit?: {
+  unit?: BackendUnit;
+  storageLocation?: {
+    id: string;
     code: string;
     name: string;
-  };
+  } | null;
 }
 
 export interface BackendGrn {
@@ -26,13 +32,14 @@ export interface BackendGrn {
   grnNumber: string;
   projectId: string;
   supplierId: string;
-  purchaseOrderId: string;
+  purchaseOrderId?: string | null;
+  deliveryDate: string;
   deliveryNoteNumber?: string | null;
-  truckNumber?: string | null;
-  receivedDate: string;
-  status: "DRAFT" | "SUBMITTED" | "INSPECTED" | "CONFIRMED" | "REJECTED";
+  vehicleNumber?: string | null;
+  driverName?: string | null;
+  status: GrnStatus;
+  receivedBy?: string | null;
   remarks?: string | null;
-  receivedBy: string;
   createdAt: string;
   project?: {
     id: string;
@@ -40,38 +47,18 @@ export interface BackendGrn {
     name: string;
   };
   supplier?: BackendSupplier;
-  purchaseOrder?: {
-    id: string;
-    purchaseOrderNumber: string;
-  };
+  purchaseOrder?: BackendPurchaseOrder;
   receiver?: {
     id: string;
     fullName: string;
     email: string;
-  };
+  } | null;
   items: BackendGrnItem[];
 }
 
 export const grnService = {
-  async getGrns(params?: {
-    projectId?: string;
-    supplierId?: string;
-    purchaseOrderId?: string;
-    status?: string;
-    page?: number;
-    limit?: number;
-  }) {
-    const query = new URLSearchParams();
-    if (params?.projectId) query.set("projectId", params.projectId);
-    if (params?.supplierId) query.set("supplierId", params.supplierId);
-    if (params?.purchaseOrderId) query.set("purchaseOrderId", params.purchaseOrderId);
-    if (params?.status) query.set("status", params.status);
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.limit) query.set("limit", String(params.limit));
-
-    const qs = query.toString();
-    const endpoint = `/api/grns${qs ? `?${qs}` : ""}`;
-    const res = await api.get<ApiResponse<BackendGrn[]>>(endpoint);
+  async getGrns() {
+    const res = await api.get<ApiResponse<BackendGrn[]>>("/api/grns");
     return res.data;
   },
 
@@ -84,19 +71,18 @@ export const grnService = {
     projectId: string;
     supplierId: string;
     purchaseOrderId: string;
+    deliveryDate: string;
     deliveryNoteNumber?: string;
-    truckNumber?: string;
-    receivedDate?: string;
+    vehicleNumber?: string;
+    driverName?: string;
     remarks?: string;
     items: {
       materialId: string;
-      orderedQuantity: number;
       deliveredQuantity: number;
-      acceptedQuantity: number;
       damagedQuantity?: number;
       rejectedQuantity?: number;
+      unitId: string;
       batchNumber?: string;
-      storageLocationId?: string;
       remarks?: string;
     }[];
   }) {
@@ -109,7 +95,7 @@ export const grnService = {
     return res.data;
   },
 
-  async rejectGrn(id: string, reason?: string) {
+  async rejectGrn(id: string, reason: string) {
     const res = await api.post<ApiResponse<BackendGrn>>(`/api/grns/${id}/reject`, { reason });
     return res.data;
   },
