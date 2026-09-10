@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Toaster, toast } from "sonner";
-import { LayoutDashboard, FileText, FlaskConical, Boxes, Database } from "lucide-react";
+import { LayoutDashboard, FileText, FlaskConical, Boxes, Database, Settings } from "lucide-react";
 import { type UserRole } from "./types";
 import Navbar from "./components/Navbar";
 import ProjectOverview from "./components/ProjectOverview";
 import RequisitionProcurement from "./components/RequisitionProcurement";
 import QualityControlAndGRN from "./components/QualityControlAndGRN";
 import InventoryAndSiteIssuance from "./components/InventoryAndSiteIssuance";
+import Administration from "./components/Administration";
 import Login from "./pages/Login";
 import { authService, type AuthUser } from "./services/auth.service";
 import { useAppData } from "./hooks/useAppData";
@@ -115,13 +116,19 @@ function App() {
   };
 
   const navItems = useMemo(
-    () => [
-      { key: "overview", label: "Command Center", icon: LayoutDashboard },
-      { key: "req", label: "Requisition & Procurement", icon: FileText },
-      { key: "quality", label: "Quality & GRN", icon: FlaskConical },
-      { key: "inventory", label: "Inventory & Site", icon: Boxes },
-    ],
-    []
+    () => {
+      const items = [
+        { key: "overview", label: "Command Center", icon: LayoutDashboard },
+        { key: "req", label: "Requisition & Procurement", icon: FileText },
+        { key: "quality", label: "Quality & GRN", icon: FlaskConical },
+        { key: "inventory", label: "Inventory & Site", icon: Boxes },
+      ];
+      if (currentUser?.permissions?.includes("users:read")) {
+        items.push({ key: "admin", label: "Administration", icon: Settings });
+      }
+      return items;
+    },
+    [currentUser]
   );
 
   const isEngineer = role === "Site Engineer" || role === "Storekeeper";
@@ -318,6 +325,18 @@ function App() {
                   materials={materials}
                 />
               )}
+              {tab === "admin" &&
+                (currentUser?.permissions?.includes("users:read") ? (
+                  <Administration
+                    permissions={currentUser.permissions ?? []}
+                    currentUserId={currentUser.id ?? null}
+                    onProjectChanged={refreshAll}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                    You do not have permission to view Administration.
+                  </div>
+                ))}
             </motion.div>
           </AnimatePresence>
         </main>

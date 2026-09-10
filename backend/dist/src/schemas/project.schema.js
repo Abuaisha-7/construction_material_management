@@ -55,5 +55,9 @@ exports.createProjectSchema = zod_1.z.object({
         "CANCELLED",
     ])
         .default("PLANNING"),
+    projectManagerId: zod_1.z
+        .string()
+        .uuid("Invalid project manager ID")
+        .optional(),
 });
 exports.updateProjectSchema = exports.createProjectSchema.partial();

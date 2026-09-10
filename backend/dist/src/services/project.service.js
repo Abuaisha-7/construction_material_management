@@ -60,6 +60,15 @@ async function getProjects(params) {
             take: limit,
             orderBy: {
                 createdAt: "desc"
+            },
+            include: {
+                projectManager: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true
+                    }
+                }
             }
         }),
         database_1.prisma.project.count({
@@ -82,6 +91,13 @@ async function getProjectById(projectId) {
             id: projectId
         },
         include: {
+            projectManager: {
+                select: {
+                    id: true,
+                    fullName: true,
+                    email: true
+                }
+            },
             buildings: true,
             activities: true
         }

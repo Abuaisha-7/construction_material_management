@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notifyProjectManager = exports.notifyUser = exports.notifyUsersByRoles = exports.createNotifications = exports.deleteNotification = exports.markAllNotificationsAsRead = exports.markNotificationAsRead = exports.getNotificationById = exports.getNotifications = exports.createNotification = void 0;
+exports.notifyProjectManager = exports.notifyUser = exports.notifyUsersByRoles = exports.createNotifications = exports.clearAllNotifications = exports.deleteNotification = exports.markAllNotificationsAsRead = exports.markNotificationAsRead = exports.getNotificationById = exports.getNotifications = exports.createNotification = void 0;
 const database_1 = require("../config/database");
 const client_1 = require("@prisma/client");
 /* =========================================================
@@ -114,8 +114,7 @@ const markNotificationAsRead = async (notificationId, userId) => {
             id: notificationId,
         },
         data: {
-            isRead: true,
-            readAt: new Date(),
+            isRead: true
         },
     });
 };
@@ -130,8 +129,7 @@ const markAllNotificationsAsRead = async (userId) => {
             isRead: false,
         },
         data: {
-            isRead: true,
-            readAt: new Date(),
+            isRead: true
         },
     });
     return {
@@ -159,6 +157,20 @@ const deleteNotification = async (notificationId, userId) => {
     });
 };
 exports.deleteNotification = deleteNotification;
+/* =========================================================
+   CLEAR ALL NOTIFICATIONS FOR USER
+========================================================= */
+const clearAllNotifications = async (userId) => {
+    const result = await database_1.prisma.notification.deleteMany({
+        where: {
+            userId,
+        },
+    });
+    return {
+        count: result.count,
+    };
+};
+exports.clearAllNotifications = clearAllNotifications;
 /* =========================================================
    CREATE MULTIPLE NOTIFICATIONS
 ========================================================= */

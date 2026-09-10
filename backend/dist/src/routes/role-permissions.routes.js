@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const rolePermission_controller_1 = require("../controllers/rolePermission.controller");
+const rolePermission_schema_1 = require("../schemas/rolePermission.schema");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const role_middleware_1 = require("../middleware/role.middleware");
+const validation_middleware_1 = require("../middleware/validation.middleware");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authenticate);
+router.use((0, role_middleware_1.requireRole)("ADMIN"));
+router.post("/", (0, validation_middleware_1.validate)(rolePermission_schema_1.createRolePermissionSchema), rolePermission_controller_1.createRolePermission);
+router.get("/", rolePermission_controller_1.getRolePermissions);
+router.get("/:roleId/:permissionId", rolePermission_controller_1.getRolePermission);
+router.delete("/:roleId/:permissionId", rolePermission_controller_1.deleteRolePermission);
+exports.default = router;

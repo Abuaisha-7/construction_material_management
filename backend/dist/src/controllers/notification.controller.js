@@ -6,6 +6,7 @@ exports.getNotificationByIdController = getNotificationByIdController;
 exports.markNotificationAsReadController = markNotificationAsReadController;
 exports.markAllNotificationsAsReadController = markAllNotificationsAsReadController;
 exports.deleteNotificationController = deleteNotificationController;
+exports.clearAllNotificationsController = clearAllNotificationsController;
 const notification_service_1 = require("../services/notification.service");
 async function getNotificationsController(req, res) {
     try {
@@ -93,6 +94,23 @@ async function deleteNotificationController(req, res) {
         return res.status(404).json({
             success: false,
             message: error.message,
+        });
+    }
+}
+async function clearAllNotificationsController(req, res) {
+    try {
+        const result = await (0, notification_service_1.clearAllNotifications)(req.user.id);
+        return res.status(200).json({
+            success: true,
+            message: "All notifications cleared",
+            data: result,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to clear notifications",
         });
     }
 }

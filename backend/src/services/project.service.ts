@@ -19,6 +19,7 @@ interface CreateProjectInput {
   actualCompletionDate?: Date;
   contractDurationDays?: number;
   status?: ProjectStatus;
+  projectManagerId?: string;
 }
 
 export async function createProject(
@@ -86,7 +87,7 @@ export async function getProjects(params: {
         : {})
     };
   
-    const [
+const [
       projects,
       total
     ] = await prisma.$transaction([
@@ -96,9 +97,18 @@ export async function getProjects(params: {
         take: limit,
         orderBy: {
           createdAt: "desc"
+        },
+        include: {
+          projectManager: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true
+            }
+          }
         }
       }),
-  
+
       prisma.project.count({
         where
       })
@@ -126,6 +136,13 @@ export async function getProjectById(
         },
   
         include: {
+          projectManager: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true
+            }
+          },
           buildings: true,
           activities: true
         }

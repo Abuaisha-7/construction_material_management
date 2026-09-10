@@ -64,6 +64,11 @@ export const createProjectSchema = z.object({
         "CANCELLED",
       ])
       .default("PLANNING"),
+
+    projectManagerId: z
+      .string()
+      .uuid("Invalid project manager ID")
+      .optional(),
   });
 
 export const updateProjectSchema =
