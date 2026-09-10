@@ -10,5 +10,7 @@ router.get("/", notification_controller_1.getNotificationsController);
 router.get("/:id", notification_controller_1.getNotificationByIdController);
 router.patch("/:id/read", notification_controller_1.markNotificationAsReadController);
 router.patch("/read-all", notification_controller_1.markAllNotificationsAsReadController);
+router.delete("/clear-all", notification_controller_1.clearAllNotificationsController);
+router.delete("/", notification_controller_1.clearAllNotificationsController);
 router.delete("/:id", notification_controller_1.deleteNotificationController);
 exports.default = router;

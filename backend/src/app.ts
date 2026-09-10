@@ -27,6 +27,10 @@ import stockCountRoutes from "./routes/stockCount.routes";
 import stockAdjustmentRoutes from "./routes/stockAdjustment.routes";
 import notificationRoutes from "./routes/notification.routes";
 import userRoleRoutes from "./routes/userRole.routes";
+import usersRoutes from "./routes/users.routes";
+import rolesRoutes from "./routes/roles.routes";
+import permissionsRoutes from "./routes/permissions.routes";
+import rolePermissionsRoutes from "./routes/role-permissions.routes";
 
 import { env } from "./config/env";
 
@@ -90,6 +94,26 @@ app.use(
 app.use(
   "/api/user-roles",
   userRoleRoutes
+);
+
+app.use(
+  "/api/users",
+  usersRoutes
+);
+
+app.use(
+  "/api/roles",
+  rolesRoutes
+);
+
+app.use(
+  "/api/permissions",
+  permissionsRoutes
+);
+
+app.use(
+  "/api/role-permissions",
+  rolePermissionsRoutes
 );
 
 app.use(

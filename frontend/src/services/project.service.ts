@@ -1,5 +1,12 @@
 import { api, type ApiResponse } from "./api";
 
+export type BackendProjectStatus =
+  | "PLANNING"
+  | "ACTIVE"
+  | "ON_HOLD"
+  | "COMPLETED"
+  | "CANCELLED";
+
 export interface BackendProject {
   id: string;
   projectCode: string;
@@ -13,7 +20,7 @@ export interface BackendProject {
   completionDate?: string | null;
   contractValue?: string | number | null;
   currency?: string | null;
-  status: "ACTIVE" | "COMPLETED" | "SUSPENDED" | "CANCELLED";
+  status: BackendProjectStatus;
   description?: string | null;
   imageUrl?: string | null;
   createdAt?: string;
@@ -22,7 +29,7 @@ export interface BackendProject {
     id: string;
     fullName: string;
     email: string;
-  };
+  } | null;
 }
 
 export const projectService = {
@@ -62,8 +69,35 @@ export const projectService = {
     contractValue?: number;
     currency?: string;
     description?: string;
+    status?: BackendProjectStatus;
   }) {
     const res = await api.post<ApiResponse<BackendProject>>("/api/projects", payload);
+    return res.data;
+  },
+
+  async updateProject(
+    id: string,
+    payload: {
+      name?: string;
+      location?: string;
+      clientName?: string;
+      contractorName?: string;
+      consultantName?: string;
+      projectManagerId?: string | null;
+      startDate?: string;
+      completionDate?: string;
+      contractValue?: number;
+      currency?: string;
+      description?: string;
+      status?: BackendProjectStatus;
+    }
+  ) {
+    const res = await api.patch<ApiResponse<BackendProject>>(`/api/projects/${id}`, payload);
+    return res.data;
+  },
+
+  async deleteProject(id: string) {
+    const res = await api.delete<ApiResponse<null>>(`/api/projects/${id}`);
     return res.data;
   },
 };

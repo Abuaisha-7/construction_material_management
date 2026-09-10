@@ -31,12 +31,32 @@ const stockCount_routes_1 = __importDefault(require("./routes/stockCount.routes"
 const stockAdjustment_routes_1 = __importDefault(require("./routes/stockAdjustment.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
 const userRole_routes_1 = __importDefault(require("./routes/userRole.routes"));
+const users_routes_1 = __importDefault(require("./routes/users.routes"));
+const roles_routes_1 = __importDefault(require("./routes/roles.routes"));
+const permissions_routes_1 = __importDefault(require("./routes/permissions.routes"));
+const role_permissions_routes_1 = __importDefault(require("./routes/role-permissions.routes"));
 const env_1 = require("./config/env");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
+const allowedOrigins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    env_1.env.frontendUrl,
+].filter(Boolean);
 app.use((0, cors_1.default)({
-    origin: env_1.env.frontendUrl,
-    credentials: true
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile, curl) or any localhost port during development
+        if (!origin ||
+            allowedOrigins.includes(origin) ||
+            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    credentials: true,
 }));
 app.use(express_1.default.json({
     limit: "10mb"
@@ -53,6 +73,10 @@ app.get("/api/health", (_req, res) => {
 });
 app.use("/api/auth", auth_routes_1.default);
 app.use("/api/user-roles", userRole_routes_1.default);
+app.use("/api/users", users_routes_1.default);
+app.use("/api/roles", roles_routes_1.default);
+app.use("/api/permissions", permissions_routes_1.default);
+app.use("/api/role-permissions", role_permissions_routes_1.default);
 app.use("/api/materials", material_routes_1.default);
 app.use("/api/projects", project_routes_1.default);
 app.use("/api/material-categories", material_category_routes_1.default);
