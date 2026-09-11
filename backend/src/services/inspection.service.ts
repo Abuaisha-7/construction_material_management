@@ -467,7 +467,7 @@ export async function getInspectionById(
               },
             },
 
-            Material: true,
+            material: true,
           },
         },
       },

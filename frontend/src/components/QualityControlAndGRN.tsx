@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
   Truck, FlaskConical, Check, X, ShieldCheck, PackageCheck, PackageX,
   Microscope, UserRound, FileText, RefreshCcw, CircleCheck, Eye,
+  Plus, Loader2, ClipboardList, CalendarDays, ArrowRight,
 } from "lucide-react";
 import {
   type AppState,
@@ -11,11 +12,16 @@ import {
   type GRN as GRNType,
   type GRNItem,
   type QCInspection,
+  type InspectionStatus,
+  type InspectionItemDetail,
   type Material,
   type Supplier,
   type PurchaseOrder,
 } from "../types";
 import { MATERIALS } from "../data/mockData";
+import { grnService, type BackendGrn } from "../services/grn.service";
+import { inspectionService } from "../services/inspection.service";
+import { adaptInspection } from "../services/dataAdapters";
 
 interface Props {
   state: AppState;
@@ -27,7 +33,34 @@ interface Props {
   onConfirmGrnBackend?: (id: string) => Promise<boolean>;
   onRejectGrnBackend?: (id: string, reason: string) => Promise<boolean>;
   onCreateGrnBackend?: (payload: GrnCreatePayload) => Promise<boolean>;
-  onCompleteInspectionBackend?: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
+  onCompleteInspectionBackend?: (
+    id: string,
+    result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
+    note?: string,
+    correctiveAction?: string
+  ) => Promise<boolean>;
+  onCreateInspectionBackend?: (payload: {
+    grnId: string;
+    inspectionDate?: string;
+    remarks?: string;
+    correctiveAction?: string;
+    items: {
+      grnItemId: string;
+      materialId?: string;
+      quantityInspected?: number;
+      quantityAccepted?: number;
+      quantityConditionallyAccepted?: number;
+      quantityQuarantined?: number;
+      quantityRejected?: number;
+      specification?: string;
+      requiredStandard?: string;
+      certificateNumber?: string;
+      testRequired?: boolean;
+      testResult?: string;
+      remarks?: string;
+    }[];
+  }) => Promise<boolean>;
+  onStartInspectionBackend?: (id: string) => Promise<boolean>;
 }
 
 export type GrnCreatePayload = {
@@ -52,11 +85,18 @@ export type GrnCreatePayload = {
 
 type Tab = "grn" | "qc";
 
-const QC_STYLE: Record<string, string> = {
-  "Pending Inspection": "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  "Approved for Use": "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  Quarantined: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  Rejected: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+const INS_STATUS_STYLE: Record<string, string> = {
+  PENDING: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  IN_PROGRESS: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  COMPLETED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+};
+
+const DECISION_STYLE: Record<string, string> = {
+  ACCEPTED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  CONDITIONALLY_ACCEPTED: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  PARTIALLY_ACCEPTED: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  REJECTED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  QUARANTINED: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
 };
 
 const GRN_STATUS_STYLE: Record<string, string> = {
@@ -93,6 +133,9 @@ const condOf = (it: GRNItem): "Good" | "Damaged" | "Short" => {
   if ((it.damagedQty ?? 0) > 0) return "Damaged";
   return "Good";
 };
+
+const statusLabel = (s: InspectionStatus) =>
+  s === "PENDING" ? "Pending" : s === "IN_PROGRESS" ? "In Progress" : "Completed";
 
 function NewGRNModal({
   purchaseOrders,
@@ -615,6 +658,571 @@ function GRNDetailModal({
   );
 }
 
+function NewInspectionModal({
+  materials,
+  onCancel,
+  onSubmit,
+}: {
+  materials?: Material[];
+  onCancel: () => void;
+  onSubmit: (payload: {
+    grnId: string;
+    inspectionDate?: string;
+    remarks?: string;
+    items: {
+      grnItemId: string;
+      materialId?: string;
+      quantityInspected?: number;
+      quantityAccepted?: number;
+      quantityQuarantined?: number;
+      quantityRejected?: number;
+      specification?: string;
+      requiredStandard?: string;
+      remarks?: string;
+    }[];
+  }) => Promise<boolean>;
+}) {
+  const [eligibleGrns, setEligibleGrns] = useState<BackendGrn[]>([]);
+  const [loadingGrns, setLoadingGrns] = useState(true);
+  const [selectedGrnId, setSelectedGrnId] = useState("");
+  const [selectedGrn, setSelectedGrn] = useState<BackendGrn | null>(null);
+  const [inspectionDate, setInspectionDate] = useState(today());
+  const [remarks, setRemarks] = useState("");
+  const [itemRows, setItemRows] = useState<
+    {
+      grnItemId: string;
+      materialId: string;
+      materialName: string;
+      materialCode: string;
+      unit: string;
+      deliveredQty: number;
+      quantityInspected: number;
+      quantityAccepted: number;
+      quantityQuarantined: number;
+      quantityRejected: number;
+      specification: string;
+      requiredStandard: string;
+      remarks: string;
+    }[]
+  >([]);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const grns = await grnService.getGrns();
+        if (!cancelled) {
+          setEligibleGrns(grns.filter((g) => g.status === "AWAITING_INSPECTION"));
+        }
+      } catch {
+        if (!cancelled) setEligibleGrns([]);
+      } finally {
+        if (!cancelled) setLoadingGrns(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectGrn = (id: string) => {
+    setSelectedGrnId(id);
+    setError("");
+    const grn = eligibleGrns.find((g) => g.id === id);
+    setSelectedGrn(grn || null);
+    if (!grn) {
+      setItemRows([]);
+      return;
+    }
+    setItemRows(
+      (grn.items || []).map((item) => ({
+        grnItemId: item.id,
+        materialId: item.materialId,
+        materialName: item.material?.name || "",
+        materialCode: item.material?.materialCode || "",
+        unit: item.unit?.symbol || item.unit?.code || item.unit?.name || "",
+        deliveredQty: Number(item.deliveredQuantity || 0),
+        quantityInspected: Number(item.deliveredQuantity || 0),
+        quantityAccepted: Number(item.deliveredQuantity || 0),
+        quantityQuarantined: 0,
+        quantityRejected: 0,
+        specification: "",
+        requiredStandard: "",
+        remarks: "",
+      }))
+    );
+  };
+
+  const updItem = (i: number, patch: Partial<typeof itemRows[number]>) =>
+    setItemRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
+  const resolveName = (materialId: string, name: string) =>
+    name || (materials && materials.find((m) => m.id === materialId)?.name) || materialId;
+
+  const submit = async () => {
+    setError("");
+    if (!selectedGrnId) {
+      setError("Select a GRN with AWAITING_INSPECTION status.");
+      return;
+    }
+    if (itemRows.length === 0) {
+      setError("The selected GRN has no items to inspect.");
+      return;
+    }
+    for (const row of itemRows) {
+      if (row.quantityInspected <= 0) {
+        setError(`Inspected quantity must be greater than zero for ${resolveName(row.materialId, row.materialName)}.`);
+        return;
+      }
+      if (row.quantityInspected > row.deliveredQty) {
+        setError(`Inspected quantity cannot exceed delivered quantity (${row.deliveredQty}) for ${resolveName(row.materialId, row.materialName)}.`);
+        return;
+      }
+      if (row.quantityAccepted < 0 || row.quantityQuarantined < 0 || row.quantityRejected < 0) {
+        setError(`Quantities cannot be negative for ${resolveName(row.materialId, row.materialName)}.`);
+        return;
+      }
+      const total = row.quantityAccepted + row.quantityQuarantined + row.quantityRejected;
+      if (total > row.quantityInspected) {
+        setError(`Accepted + quarantined + rejected cannot exceed inspected quantity for ${resolveName(row.materialId, row.materialName)}.`);
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    const ok = await onSubmit({
+      grnId: selectedGrnId,
+      inspectionDate: inspectionDate || undefined,
+      remarks: remarks.trim() || undefined,
+      items: itemRows.map((r) => ({
+        grnItemId: r.grnItemId,
+        materialId: r.materialId || undefined,
+        quantityInspected: r.quantityInspected,
+        quantityAccepted: r.quantityAccepted,
+        quantityQuarantined: r.quantityQuarantined,
+        quantityRejected: r.quantityRejected,
+        specification: r.specification.trim() || undefined,
+        requiredStandard: r.requiredStandard.trim() || undefined,
+        remarks: r.remarks.trim() || undefined,
+      })),
+    });
+    if (!ok) {
+      setSubmitting(false);
+    }
+  };
+
+  const inputCls =
+    "mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none";
+
+  return (
+    <div className="p-6">
+      <div className="text-lg font-bold tracking-tight">New Material Inspection</div>
+      <p className="text-xs text-muted-foreground">
+        Create an inspection from a GRN awaiting QA/QC review.
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-xs font-semibold text-muted-foreground">
+            GRN <span className="text-rose-500">*</span>
+          </label>
+          {loadingGrns ? (
+            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" /> Loading GRNs…
+            </div>
+          ) : (
+            <select value={selectedGrnId} onChange={(e) => selectGrn(e.target.value)} className={inputCls}>
+              <option value="">Select a GRN (AWAITING_INSPECTION)…</option>
+              {eligibleGrns.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.grnNumber} · {g.supplier?.companyName || "Vendor"} · {g.deliveryDate?.slice(0, 10)}
+                </option>
+              ))}
+            </select>
+          )}
+          {eligibleGrns.length === 0 && !loadingGrns && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+              No GRNs with AWAITING_INSPECTION status found. Confirm a GRN first.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Inspection Date</label>
+          <input type="date" value={inspectionDate} onChange={(e) => setInspectionDate(e.target.value)}
+            className={inputCls} />
+        </div>
+
+        <div className="col-span-2">
+          <label className="text-xs font-semibold text-muted-foreground">Remarks</label>
+          <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={2}
+            className="mt-1 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none" />
+        </div>
+      </div>
+
+      {selectedGrn && (
+        <div className="mt-4 overflow-hidden rounded-lg border border-border">
+          <div className="border-b border-border px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground">
+            Inspection Items · from {selectedGrn.grnNumber}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Material</th>
+                  <th className="px-3 py-2 text-center font-semibold">Unit</th>
+                  <th className="px-3 py-2 text-right font-semibold">Delivered</th>
+                  <th className="px-3 py-2 text-right font-semibold">Inspected</th>
+                  <th className="px-3 py-2 text-right font-semibold">Accepted</th>
+                  <th className="px-3 py-2 text-right font-semibold">Quarantined</th>
+                  <th className="px-3 py-2 text-right font-semibold">Rejected</th>
+                  <th className="px-3 py-2 text-left font-semibold">Standard</th>
+                  <th className="px-3 py-2 text-left font-semibold">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itemRows.map((r, i) => (
+                  <tr key={r.grnItemId} className="border-t border-border">
+                    <td className="px-3 py-2">
+                      <div className="font-semibold">{resolveName(r.materialId, r.materialName)}</div>
+                      <div className="text-[10px] text-muted-foreground">{r.materialCode || r.materialId}</div>
+                    </td>
+                    <td className="px-3 py-2 text-center text-muted-foreground">{r.unit}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtQty(r.deliveredQty)}</td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={0} max={r.deliveredQty} value={r.quantityInspected}
+                        onChange={(e) => updItem(i, { quantityInspected: Math.max(0, Number(e.target.value)) })}
+                        className="h-8 w-20 rounded-lg border border-input bg-background px-2 text-right text-xs outline-none" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={0} value={r.quantityAccepted}
+                        onChange={(e) => updItem(i, { quantityAccepted: Math.max(0, Number(e.target.value)) })}
+                        className="h-8 w-20 rounded-lg border border-input bg-background px-2 text-right text-xs outline-none" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={0} value={r.quantityQuarantined}
+                        onChange={(e) => updItem(i, { quantityQuarantined: Math.max(0, Number(e.target.value)) })}
+                        className="h-8 w-20 rounded-lg border border-input bg-background px-2 text-right text-xs outline-none" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={0} value={r.quantityRejected}
+                        onChange={(e) => updItem(i, { quantityRejected: Math.max(0, Number(e.target.value)) })}
+                        className="h-8 w-20 rounded-lg border border-input bg-background px-2 text-right text-xs outline-none" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input value={r.requiredStandard} placeholder="e.g. ASTM C33"
+                        onChange={(e) => updItem(i, { requiredStandard: e.target.value })}
+                        className="h-8 w-28 rounded-lg border border-input bg-background px-2 text-xs outline-none" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input value={r.remarks} placeholder="Notes"
+                        onChange={(e) => updItem(i, { remarks: e.target.value })}
+                        className="h-8 w-28 rounded-lg border border-input bg-background px-2 text-xs outline-none" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={onCancel} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">
+          Cancel
+        </button>
+        <button
+          onClick={() => void submit()}
+          disabled={submitting || !selectedGrnId}
+          className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-amber-500 dark:text-slate-950"
+        >
+          <ClipboardList size={15} /> {submitting ? "Creating…" : "Create Inspection"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type CompleteDecision = "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED";
+
+function deriveDecision(items: InspectionItemDetail[]): CompleteDecision {
+  const hasAccepted = items.some((i) => i.quantityAccepted > 0);
+  const hasConditional = items.some((i) => i.quantityConditionallyAccepted > 0);
+  const hasQuarantine = items.some((i) => i.quantityQuarantined > 0);
+  const hasRejected = items.some((i) => i.quantityRejected > 0);
+  const resultTypes = [hasAccepted, hasConditional, hasQuarantine, hasRejected].filter(Boolean).length;
+  if (resultTypes > 1) return "PARTIALLY_ACCEPTED";
+  if (hasAccepted) return "ACCEPTED";
+  if (hasConditional) return "CONDITIONALLY_ACCEPTED";
+  if (hasQuarantine) return "QUARANTINED";
+  return "REJECTED";
+}
+
+function InspectionDetailModal({
+  inspectionId,
+  onClose,
+  onStartBackend,
+  onCompleteBackend,
+  role,
+}: {
+  inspectionId: string;
+  onClose: () => void;
+  onStartBackend?: (id: string) => Promise<boolean>;
+  onCompleteBackend?: (
+    id: string,
+    result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
+    note?: string,
+    correctiveAction?: string
+  ) => Promise<boolean>;
+  role: UserRole;
+}) {
+  const [inspection, setInspection] = useState<QCInspection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [showComplete, setShowComplete] = useState(false);
+  const [completeRemarks, setCompleteRemarks] = useState("");
+  const [completeAction, setCompleteAction] = useState("");
+
+  const fetchInspection = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await inspectionService.getInspectionById(inspectionId);
+      setInspection(adaptInspection(data));
+    } catch (err) {
+      toast.error("Failed to load inspection details.");
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }, [inspectionId, onClose]);
+
+  useEffect(() => {
+    void fetchInspection();
+  }, [fetchInspection]);
+
+  const handleStart = async () => {
+    if (!onStartBackend || !inspection) return;
+    setActionBusy("start");
+    const ok = await onStartBackend(inspection.id);
+    setActionBusy(null);
+    if (ok) {
+      await fetchInspection();
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!onCompleteBackend || !inspection) return;
+    setActionBusy("complete");
+    const items = inspection.inspectionItems || [];
+    const ok = await onCompleteBackend(
+      inspection.id,
+      deriveDecision(items),
+      completeRemarks.trim() || undefined,
+      completeAction.trim() || undefined
+    );
+    setActionBusy(null);
+    if (ok) {
+      setShowComplete(false);
+      setCompleteRemarks("");
+      setCompleteAction("");
+      await fetchInspection();
+    }
+  };
+
+  const canAct = role === "QA/QC Inspector" || role === "Project Manager";
+  const statusRaw = inspection?.status === "In Progress" ? "IN_PROGRESS" : inspection?.status === "Pending Inspection" ? "PENDING" : "COMPLETED";
+
+  return (
+    <div className="p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-lg font-bold tracking-tight">
+            {loading ? <Loader2 size={18} className="animate-spin" /> : inspection?.ref || "Inspection"}
+          </div>
+          {!loading && inspection && (
+            <p className="text-xs text-muted-foreground">
+              GRN {inspection.grnRef}
+              {inspection.supplier ? ` · ${inspection.supplier}` : ""}
+              {inspection.poRef ? ` · PO ${inspection.poRef}` : ""}
+            </p>
+          )}
+        </div>
+        <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent">
+          <X size={16} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="mt-8 flex flex-col items-center gap-2 py-10 text-sm text-muted-foreground">
+          <Loader2 size={24} className="animate-spin" /> Loading inspection…
+        </div>
+      ) : !inspection ? null : (
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="text-[11px] font-bold uppercase text-muted-foreground">Inspection Details</div>
+              <div className="mt-2 space-y-1.5 text-xs">
+                <div><span className="text-muted-foreground">Number:</span> <span className="font-semibold font-mono">{inspection.ref}</span></div>
+                <div><span className="text-muted-foreground">Date:</span> <span className="font-mono">{inspection.testDate}</span></div>
+                <div className="flex items-center gap-1"><span className="text-muted-foreground">Inspector:</span> <UserRound size={11} /> <span className="font-semibold">{inspection.inspector}</span></div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="text-[11px] font-bold uppercase text-muted-foreground">Status</div>
+              <div className="mt-2 space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Status:</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${INS_STATUS_STYLE[statusRaw] || ""}`}>
+                    {statusLabel(statusRaw as InspectionStatus)}
+                  </span>
+                </div>
+                {inspection.decision && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Decision:</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${DECISION_STYLE[inspection.decision] || ""}`}>
+                      {inspection.decision.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                )}
+                {inspection.supplier && (
+                  <div><span className="text-muted-foreground">Supplier:</span> <span className="font-semibold">{inspection.supplier}</span></div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {inspection.note && (
+            <div className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+              {inspection.note}
+            </div>
+          )}
+
+          {inspection.inspectionItems && inspection.inspectionItems.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-lg border border-border">
+              <div className="border-b border-border px-3 py-2 text-[11px] font-bold uppercase text-muted-foreground">
+                Inspection Items ({inspection.inspectionItems.length})
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Material</th>
+                      <th className="px-3 py-2 text-right font-semibold">Delivered</th>
+                      <th className="px-3 py-2 text-right font-semibold">Inspected</th>
+                      <th className="px-3 py-2 text-right font-semibold">Accepted</th>
+                      <th className="px-3 py-2 text-right font-semibold">Quarantined</th>
+                      <th className="px-3 py-2 text-right font-semibold">Rejected</th>
+                      <th className="px-3 py-2 text-left font-semibold">Unit</th>
+                      <th className="px-3 py-2 text-left font-semibold">Standard</th>
+                      <th className="px-3 py-2 text-left font-semibold">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inspection.inspectionItems.map((item) => (
+                      <tr key={item.id} className="border-t border-border">
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{item.materialName || item.materialId || "—"}</div>
+                          <div className="text-[10px] text-muted-foreground">{item.materialCode || item.grnItemId}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtQty(item.deliveredQuantity)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtQty(item.quantityInspected)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-600">{fmtQty(item.quantityAccepted)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-orange-600">{fmtQty(item.quantityQuarantined)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-rose-600">{fmtQty(item.quantityRejected)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{item.unit || "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{item.requiredStandard || "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{item.remarks || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {canAct && statusRaw === "PENDING" && (
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
+              <button
+                onClick={() => void handleStart()}
+                disabled={actionBusy === "start"}
+                className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+              >
+                {actionBusy === "start" ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+                {actionBusy === "start" ? "Starting…" : "Start Inspection"}
+              </button>
+            </div>
+          )}
+
+          {canAct && statusRaw === "IN_PROGRESS" && (
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
+              {showComplete ? (
+                <div className="w-full">
+                  <div className="mb-3 rounded-lg border border-border bg-muted/30 p-4">
+                    <div className="text-xs font-semibold text-foreground mb-2">Complete Inspection</div>
+                    <p className="mb-3 text-[11px] text-muted-foreground">
+                      Decisions and stock posting are determined from the inspection item quantities when completing.
+                    </p>
+                    <textarea
+                      value={completeRemarks}
+                      onChange={(e) => setCompleteRemarks(e.target.value)}
+                      rows={2}
+                      placeholder="Optional remarks…"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none"
+                    />
+                    <textarea
+                      value={completeAction}
+                      onChange={(e) => setCompleteAction(e.target.value)}
+                      rows={2}
+                      placeholder="Optional corrective action…"
+                      className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => { setShowComplete(false); setCompleteRemarks(""); setCompleteAction(""); }}
+                      className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => void handleComplete()}
+                      disabled={actionBusy === "complete"}
+                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      {actionBusy === "complete" ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      {actionBusy === "complete" ? "Completing…" : "Confirm Complete"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowComplete(true)}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+                >
+                  <Check size={15} /> Complete Inspection
+                </button>
+              )}
+            </div>
+          )}
+
+          {statusRaw === "COMPLETED" && (
+            <div className="mt-4 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              Inspection completed.
+              {inspection.decision ? ` Decision: ${inspection.decision.replace(/_/g, " ")}` : ""}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function QualityControlAndGRN({
   state,
   setState,
@@ -626,10 +1234,14 @@ export default function QualityControlAndGRN({
   onRejectGrnBackend,
   onCreateGrnBackend,
   onCompleteInspectionBackend,
+  onCreateInspectionBackend,
+  onStartInspectionBackend,
 }: Props) {
   const [tab, setTab] = useState<Tab>(focus === "qc" ? "qc" : "grn");
   const [showNew, setShowNew] = useState(false);
+  const [showNewInspection, setShowNewInspection] = useState(false);
   const [viewGRN, setViewGRN] = useState<GRNType | null>(null);
+  const [viewInspectionId, setViewInspectionId] = useState<string | null>(null);
   const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
 
   const resolveName = (id: string, given?: string) =>
@@ -655,28 +1267,8 @@ export default function QualityControlAndGRN({
       .finally(() => setBusy(null));
   };
 
-  const setQcStatus = async (q: QCInspection, status: QCInspection["status"]) => {
-    if (onCompleteInspectionBackend && (q.id.length > 10 || q.id.includes("-"))) {
-      const backendResult =
-        status === "Approved for Use"
-          ? "ACCEPTED"
-          : status === "Quarantined"
-          ? "QUARANTINED"
-          : "REJECTED";
-      await onCompleteInspectionBackend(q.id, backendResult, q.note);
-    }
-    setState({
-      ...state,
-      inspections: state.inspections.map((x) => (x.id === q.id ? { ...x, status } : x)),
-    });
-    const msg = status === "Approved for Use" ? "released to store inventory"
-      : status === "Quarantined" ? "placed on hold for further testing"
-      : "rejected / returned to supplier";
-    toast[status === "Rejected" ? "error" : status === "Approved for Use" ? "success" : "warning"](`${q.ref} ${status} · ${msg}`);
-  };
-
-  const canDecide = role === "QA/QC Inspector" || role === "Project Manager";
   const canActGrn = role === "Storekeeper" || role === "Procurement Officer" || role === "Project Manager";
+  const canCreateInspection = role === "QA/QC Inspector" || role === "Project Manager";
   const grnBusy = (id: string, action: string) => busy?.id === id && busy.action === action;
 
   return (
@@ -794,89 +1386,116 @@ export default function QualityControlAndGRN({
           </motion.div>
         ) : (
           <motion.div key="qc" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}>
-            <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-              <Microscope size={15} className="text-emerald-500" />
-              Mandatory QC gate before stock release. Cube tests, rebar tensile and silt checks per Ethiopian standards.
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Microscope size={15} className="text-emerald-500" />
+                Mandatory QC gate before stock release. Inspection items from GRN data.
+              </div>
+              {canCreateInspection && (
+                <button onClick={() => setShowNewInspection((v) => !v)}
+                  className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-amber-500 dark:text-slate-950">
+                  <Plus size={15} /> New Inspection
+                </button>
+              )}
             </div>
+
+            {showNewInspection && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                className="mb-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                <NewInspectionModal
+                  materials={materials}
+                  onCancel={() => setShowNewInspection(false)}
+                  onSubmit={(payload) => {
+                    if (!onCreateInspectionBackend) return Promise.resolve(false);
+                    setShowNewInspection(false);
+                    return onCreateInspectionBackend(payload);
+                  }}
+                />
+              </motion.div>
+            )}
+
             <div className="grid gap-3 lg:grid-cols-2">
               {state.inspections.map((q) => {
-                const m = MATERIALS.find((x) => x.id === q.materialId);
-                const anyFail = q.tests.some((t) => !t.pass);
+                const statusRaw = q.status === "In Progress" ? "IN_PROGRESS" : q.status === "Pending Inspection" ? "PENDING" : "COMPLETED";
                 return (
-                  <div key={q.id} className={`rounded-xl border bg-card p-4 ${q.status === "Quarantined" ? "border-orange-300 dark:border-orange-800" : q.status === "Rejected" ? "border-rose-300 dark:border-rose-800" : "border-border"}`}>
+                  <div key={q.id} className={`rounded-xl border bg-card p-4 cursor-pointer transition hover:shadow-md ${
+                    statusRaw === "COMPLETED" && q.decision === "QUARANTINED" ? "border-orange-300 dark:border-orange-800" :
+                    statusRaw === "COMPLETED" && q.decision === "REJECTED" ? "border-rose-300 dark:border-rose-800" :
+                    "border-border"
+                  }`}
+                    onClick={() => setViewInspectionId(q.id)}
+                  >
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-xs font-semibold text-muted-foreground">{q.ref} · {q.grnRef}</div>
+                        <div className="text-xs font-semibold text-muted-foreground">
+                          {q.ref} · {q.grnRef}
+                          {q.supplier ? ` · ${q.supplier}` : ""}
+                        </div>
                         <div className="font-bold">{q.materialName}</div>
                       </div>
-                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${QC_STYLE[q.status]}`}>
-                        {q.status === "Approved for Use" ? <PackageCheck size={12} /> : q.status === "Rejected" ? <PackageX size={12} /> : <ShieldCheck size={12} />}
-                        {q.status}
+                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${INS_STATUS_STYLE[statusRaw] || ""}`}>
+                        {statusRaw === "COMPLETED" && q.decision === "ACCEPTED" ? <PackageCheck size={12} /> :
+                         statusRaw === "COMPLETED" && (q.decision === "REJECTED" || q.decision === "QUARANTINED") ? <PackageX size={12} /> :
+                         <ShieldCheck size={12} />}
+                        {statusLabel(statusRaw as InspectionStatus)}
                       </span>
                     </div>
+
+                    {statusRaw === "COMPLETED" && q.decision && (
+                      <div className="mt-1">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${DECISION_STYLE[q.decision] || ""}`}>
+                          {q.decision.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="rounded bg-muted px-1.5 py-0.5">{q.batch}</span>
                       <span>{q.testDate}</span>
                       <span className="flex items-center gap-0.5"><UserRound size={11} /> {q.inspector}</span>
+                      {q.poRef && <span>PO {q.poRef}</span>}
                     </div>
 
-                    <div className="mt-3 overflow-hidden rounded-lg border border-border">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/40 text-muted-foreground">
-                          <tr><th className="px-2 py-1.5 text-left font-semibold">Test</th><th className="px-2 py-1.5 text-left font-semibold">Result</th><th className="px-2 py-1.5 text-left font-semibold">Standard</th><th className="px-2 py-1.5 text-right">Pass</th></tr>
-                        </thead>
-                        <tbody>
-                          {q.tests.map((t) => (
-                            <tr key={t.id} className="border-t border-border">
-                              <td className="px-2 py-1.5 font-medium">{t.name}</td>
-                              <td className="px-2 py-1.5 font-mono">{t.value}</td>
-                              <td className="px-2 py-1.5 text-muted-foreground">{t.standard}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                {t.pass
-                                  ? <Check size={14} className="ml-auto text-emerald-500" />
-                                  : <X size={14} className="ml-auto text-rose-500" />}
-                              </td>
+                    {q.inspectionItems && q.inspectionItems.length > 0 && (
+                      <div className="mt-3 overflow-hidden rounded-lg border border-border">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground">
+                            <tr>
+                              <th className="px-2 py-1.5 text-left font-semibold">Material</th>
+                              <th className="px-2 py-1.5 text-right font-semibold">Inspected</th>
+                              <th className="px-2 py-1.5 text-right font-semibold">Accepted</th>
+                              <th className="px-2 py-1.5 text-right font-semibold">Rejected</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {q.inspectionItems.slice(0, 3).map((item) => (
+                              <tr key={item.id} className="border-t border-border">
+                                <td className="px-2 py-1.5 font-medium">{item.materialName || item.materialId || "—"}</td>
+                                <td className="px-2 py-1.5 text-right font-mono">{fmtQty(item.quantityInspected)}</td>
+                                <td className="px-2 py-1.5 text-right font-mono">{fmtQty(item.quantityAccepted)}</td>
+                                <td className="px-2 py-1.5 text-right font-mono">{fmtQty(item.quantityRejected)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {q.inspectionItems.length > 3 && (
+                          <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground text-center">
+                            +{q.inspectionItems.length - 3} more items
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {q.note && <div className="mt-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">{q.note}</div>}
+
+                    <div className="mt-2 flex items-center justify-end text-[11px] text-muted-foreground">
+                      <Eye size={12} className="mr-1" /> View details
                     </div>
-
-                    {q.note && <div className="mt-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">Note: {q.note}</div>}
-
-                    {canDecide && q.status === "Pending Inspection" && (
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <button onClick={() => setQcStatus(q, "Approved for Use")}
-                          className="flex items-center justify-center gap-1 rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">
-                          <Check size={13} /> Approve
-                        </button>
-                        <button onClick={() => setQcStatus(q, "Quarantined")}
-                          className="flex items-center justify-center gap-1 rounded-lg bg-orange-500 py-1.5 text-xs font-semibold text-white hover:bg-orange-400">
-                          <ShieldCheck size={13} /> Hold
-                        </button>
-                        <button onClick={() => setQcStatus(q, "Rejected")}
-                          className="flex items-center justify-center gap-1 rounded-lg bg-rose-600 py-1.5 text-xs font-semibold text-white hover:bg-rose-500">
-                          <X size={13} /> Reject
-                        </button>
-                      </div>
-                    )}
-                    {canDecide && q.status !== "Pending Inspection" && (
-                      <button onClick={() => setQcStatus(q, "Pending Inspection")}
-                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent">
-                        <RefreshCcw size={13} /> Reopen for re-inspection
-                      </button>
-                    )}
-                    {anyFail && q.status === "Approved for Use" && (
-                      <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-600">
-                        <PackageX size={12} /> Some tests below threshold
-                      </div>
-                    )}
                   </div>
                 );
               })}
               {state.inspections.length === 0 && (
                 <div className="col-span-full flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-                  <FlaskConical size={28} /> No inspections recorded.
+                  <FlaskConical size={28} /> No inspections recorded. Create one from an AWAITING_INSPECTION GRN.
                 </div>
               )}
             </div>
@@ -908,6 +1527,35 @@ export default function QualityControlAndGRN({
                 onClose={() => setViewGRN(null)}
                 onConfirm={doConfirmGRN}
                 onReject={doRejectGRN}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {viewInspectionId && (
+          <motion.div
+            key="inspection-detail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={() => setViewInspectionId(null)}
+          >
+            <motion.div
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-border bg-card sm:rounded-2xl"
+            >
+              <InspectionDetailModal
+                inspectionId={viewInspectionId}
+                onClose={() => setViewInspectionId(null)}
+                onStartBackend={onStartInspectionBackend}
+                onCompleteBackend={onCompleteInspectionBackend}
+                role={role}
               />
             </motion.div>
           </motion.div>

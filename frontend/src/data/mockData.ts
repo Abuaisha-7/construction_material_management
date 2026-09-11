@@ -5,7 +5,6 @@ import type {
   InventoryItem,
   Material,
   PurchaseOrder,
-  QCInspection,
   Requisition,
   ReturnVoucher,
   WastageRecord,
@@ -104,45 +103,6 @@ const GRNS: GRN[] = [
   },
 ];
 
-const QC: QCInspection[] = [
-  {
-    id: "Q1", ref: "MIR-2025-052", grnRef: "GRN-2025-077", materialId: "M08", materialName: "River Sand (Fafan)",
-    batch: "BATCH-S-010", testDate: "2025-06-16", status: "Quarantined", inspector: "QA/QC L. Bontu",
-    note: "Silt content marginally high, re-test after washing.",
-    tests: [
-      { id: "t1", name: "Silt Content", value: "2.8%", standard: "<= 2.0%", pass: false },
-      { id: "t2", name: "Organic Impurities", value: "Pass", standard: "Free", pass: true },
-      { id: "t3", name: "Grading (FM)", value: "2.6", standard: "2.3 - 3.1", pass: true },
-    ],
-  },
-  {
-    id: "Q2", ref: "MIR-2025-053", grnRef: "GRN-2025-077", materialId: "M09", materialName: "Basalt Aggregate 01",
-    batch: "BATCH-A-204", testDate: "2025-06-16", status: "Approved for Use", inspector: "QA/QC L. Bontu",
-    note: "Complies with grading requirement.",
-    tests: [
-      { id: "t4", name: "Gradation", value: "Complies", standard: "ASTM C33", pass: true },
-      { id: "t5", name: "Fineness Modulus", value: "6.8", standard: "6.0 - 7.5", pass: true },
-      { id: "t6", name: "Deleterious Materials", value: "0.4%", standard: "<=1%", pass: true },
-    ],
-  },
-  {
-    id: "Q3", ref: "MIR-2025-054", grnRef: "TRIAL".repeat(0) + "Concrete Cube 7", materialId: "M01", materialName: "PPC Cement 42.5N",
-    batch: "CUBE-7-118", testDate: "2025-06-10", status: "Approved for Use", inspector: "QA/QC L. Bontu",
-    note: "7-day cube achieved 18.4 MPa (target C25).",
-    tests: [
-      { id: "t7", name: "Compressive 7d", value: "18.4 MPa", standard: ">=16 MPa", pass: true },
-      { id: "t8", name: "Slump", value: "82 mm", standard: "60-100 mm", pass: true },
-      { id: "t9", name: "Water/Cement", value: "0.48", standard: "<=0.5", pass: true },
-    ],
-  },
-  {
-    id: "Q4", ref: "MIR-2025-055", grnRef: "GRN-2025-077", materialId: "M10", materialName: "Basalt Aggregate 02",
-    batch: "BATCH-A-205", testDate: "2025-06-16", status: "Pending Inspection", inspector: "QA/QC L. Bontu",
-    note: "Awaiting gradation result.",
-    tests: [{ id: "t10", name: "Gradation", value: "In progress", standard: "ASTM C33", pass: false }],
-  },
-];
-
 const INV: InventoryItem[] = [
   { materialId: "M01", quantity: 1420, reserved: 120, lastUpdated: "2025-06-18", onOrder: 320 },
   { materialId: "M02", quantity: 85, reserved: 0, lastUpdated: "2025-06-18", onOrder: 0 },
@@ -203,7 +163,7 @@ export function buildSeedState(): AppState {
     requisitions: REQS,
     purchaseOrders: POS,
     grns: GRNS,
-    inspections: QC,
+    inspections: [],
     inventory: INV,
     issues: ISSUES,
     returns: RETURNS,
