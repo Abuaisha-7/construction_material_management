@@ -288,6 +288,8 @@ export function adaptInspection(ins: BackendInspection): QCInspection {
     testRequired: item.testRequired,
     testResult: item.testResult ?? undefined,
     remarks: item.remarks ?? undefined,
+    storageLocationId: item.grnItem?.storageLocationId ?? null,
+    storageLocation: item.grnItem?.storageLocation ?? null,
   }));
 
   return {

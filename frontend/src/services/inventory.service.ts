@@ -18,6 +18,9 @@ export interface BackendStorageLocation {
   name: string;
   locationType?: string | null;
   capacity?: string | number | null;
+  description?: string | null;
+  isActive?: boolean;
+  warehouse?: BackendWarehouse | null;
 }
 
 export interface BackendInventoryBalance {
@@ -173,8 +176,19 @@ export const inventoryService = {
     return res.data;
   },
 
-  async getStorageLocations() {
-    const res = await api.get<ApiResponse<BackendStorageLocation[]>>("/api/storage-locations");
+  async getStorageLocations(params?: {
+    limit?: number;
+    isActive?: boolean;
+    warehouseId?: string;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.isActive !== undefined) query.set("isActive", String(params.isActive));
+    if (params?.warehouseId) query.set("warehouseId", params.warehouseId);
+
+    const res = await api.get<ApiResponse<BackendStorageLocation[]>>(
+      `/api/storage-locations${query.toString() ? `?${query.toString()}` : ""}`
+    );
     return res.data;
   },
 };

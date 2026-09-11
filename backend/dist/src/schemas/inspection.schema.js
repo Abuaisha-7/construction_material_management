@@ -125,4 +125,14 @@ exports.completeInspectionSchema = zod_1.z.object({
     correctiveAction: zod_1.z
         .string()
         .optional(),
+    storageLocations: zod_1.z
+        .array(zod_1.z.object({
+        grnItemId: zod_1.z
+            .string()
+            .uuid("Invalid GRN item ID"),
+        storageLocationId: zod_1.z
+            .string()
+            .uuid("Invalid storage location ID"),
+    }))
+        .optional(),
 });

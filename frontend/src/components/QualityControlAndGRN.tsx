@@ -22,6 +22,7 @@ import { MATERIALS } from "../data/mockData";
 import { grnService, type BackendGrn } from "../services/grn.service";
 import { inspectionService } from "../services/inspection.service";
 import { adaptInspection } from "../services/dataAdapters";
+import { inventoryService, type BackendStorageLocation } from "../services/inventory.service";
 
 interface Props {
   state: AppState;
@@ -37,7 +38,8 @@ interface Props {
     id: string,
     result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
     note?: string,
-    correctiveAction?: string
+    correctiveAction?: string,
+    storageLocations?: { grnItemId: string; storageLocationId: string }[]
   ) => Promise<boolean>;
   onCreateInspectionBackend?: (payload: {
     grnId: string;
@@ -978,7 +980,8 @@ function InspectionDetailModal({
     id: string,
     result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
     note?: string,
-    correctiveAction?: string
+    correctiveAction?: string,
+    storageLocations?: { grnItemId: string; storageLocationId: string }[]
   ) => Promise<boolean>;
   role: UserRole;
 }) {
@@ -988,6 +991,10 @@ function InspectionDetailModal({
   const [showComplete, setShowComplete] = useState(false);
   const [completeRemarks, setCompleteRemarks] = useState("");
   const [completeAction, setCompleteAction] = useState("");
+  const [storageLocations, setStorageLocations] = useState<BackendStorageLocation[]>([]);
+  const [storageLocationsLoading, setStorageLocationsLoading] = useState(false);
+  const [storageLocationsError, setStorageLocationsError] = useState("");
+  const [selectedLocations, setSelectedLocations] = useState<Record<string, string>>({});
 
   const fetchInspection = useCallback(async () => {
     try {
@@ -1006,6 +1013,38 @@ function InspectionDetailModal({
     void fetchInspection();
   }, [fetchInspection]);
 
+  useEffect(() => {
+    let active = true;
+    setStorageLocationsLoading(true);
+    setStorageLocationsError("");
+    inventoryService
+      .getStorageLocations({ limit: 100, isActive: true })
+      .then((locs) => {
+        if (!active) return;
+        const activeLocs = (locs || []).filter((l) => l.id && (l.isActive ?? true));
+        setStorageLocations(activeLocs);
+        if (activeLocs.length === 0) {
+          setStorageLocationsError(
+            "No active storage locations found. Create one before completing an inspection with accepted materials."
+          );
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load storage locations:", err);
+        setStorageLocationsError(
+          err?.message ||
+          "Failed to load storage locations. Ensure your account can view storage locations."
+        );
+      })
+      .finally(() => {
+        if (active) setStorageLocationsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleStart = async () => {
     if (!onStartBackend || !inspection) return;
     setActionBusy("start");
@@ -1018,25 +1057,45 @@ function InspectionDetailModal({
 
   const handleComplete = async () => {
     if (!onCompleteBackend || !inspection) return;
+    if (!storageReady) {
+      toast.error("Select a storage location for every accepted material before completing.");
+      return;
+    }
     setActionBusy("complete");
     const items = inspection.inspectionItems || [];
+    const storageLocations = acceptedItems
+      .map((it) => {
+        const storageLocationId = effectiveLocationId(it);
+        return storageLocationId ? { grnItemId: it.grnItemId, storageLocationId } : null;
+      })
+      .filter((x): x is { grnItemId: string; storageLocationId: string } => x !== null);
     const ok = await onCompleteBackend(
       inspection.id,
       deriveDecision(items),
       completeRemarks.trim() || undefined,
-      completeAction.trim() || undefined
+      completeAction.trim() || undefined,
+      storageLocations.length > 0 ? storageLocations : undefined
     );
     setActionBusy(null);
     if (ok) {
       setShowComplete(false);
       setCompleteRemarks("");
       setCompleteAction("");
+      setSelectedLocations({});
       await fetchInspection();
     }
   };
 
   const canAct = role === "QA/QC Inspector" || role === "Project Manager";
   const statusRaw = inspection?.status === "In Progress" ? "IN_PROGRESS" : inspection?.status === "Pending Inspection" ? "PENDING" : "COMPLETED";
+
+  const acceptedItems = (inspection?.inspectionItems || []).filter(
+    (it) => Number(it.quantityAccepted || 0) > 0
+  );
+  const effectiveLocationId = (it: InspectionItemDetail) =>
+    selectedLocations[it.grnItemId] || it.storageLocationId || "";
+  const missingLocationItems = acceptedItems.filter((it) => !effectiveLocationId(it));
+  const storageReady = acceptedItems.length === 0 || missingLocationItems.length === 0;
 
   return (
     <div className="p-6">
@@ -1121,6 +1180,7 @@ function InspectionDetailModal({
                       <th className="px-3 py-2 text-left font-semibold">Unit</th>
                       <th className="px-3 py-2 text-left font-semibold">Standard</th>
                       <th className="px-3 py-2 text-left font-semibold">Remarks</th>
+                      <th className="px-3 py-2 text-left font-semibold">Storage</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1138,6 +1198,11 @@ function InspectionDetailModal({
                         <td className="px-3 py-2 text-muted-foreground">{item.unit || "—"}</td>
                         <td className="px-3 py-2 text-muted-foreground">{item.requiredStandard || "—"}</td>
                         <td className="px-3 py-2 text-muted-foreground">{item.remarks || "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {item.storageLocation
+                            ? `${item.storageLocation.code} · ${item.storageLocation.name}`
+                            : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1166,8 +1231,69 @@ function InspectionDetailModal({
                   <div className="mb-3 rounded-lg border border-border bg-muted/30 p-4">
                     <div className="text-xs font-semibold text-foreground mb-2">Complete Inspection</div>
                     <p className="mb-3 text-[11px] text-muted-foreground">
-                      Decisions and stock posting are determined from the inspection item quantities when completing.
+                      Decisions are determined from the inspection item quantities. Accepted materials require a
+                      storage location before completing.
                     </p>
+                    <div className="mb-3 rounded-lg border border-border bg-background p-3">
+                      <div className="mb-2 text-[11px] font-semibold text-foreground">
+                        Storage Location (required for accepted materials)
+                      </div>
+                      {storageLocationsLoading ? (
+                        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                          <Loader2 size={13} className="animate-spin" /> Loading storage locations…
+                        </div>
+                      ) : storageLocationsError ? (
+                        <div className="rounded-md bg-rose-500/10 px-2 py-2 text-xs text-rose-600 dark:text-rose-400">
+                          {storageLocationsError}
+                        </div>
+                      ) : acceptedItems.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">
+                          No accepted materials — no storage location required.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {acceptedItems.map((it) => {
+                            const assigned = selectedLocations[it.grnItemId] || it.storageLocationId || "";
+                            const hasAssigned = storageLocations.some((l) => l.id === assigned);
+                            return (
+                              <div
+                                key={it.grnItemId}
+                                className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="text-xs">
+                                  <div className="font-medium">{it.materialName || it.materialId}</div>
+                                  <div className="text-[10px] text-muted-foreground">
+                                    Accepted: {fmtQty(it.quantityAccepted)} {it.unit}
+                                  </div>
+                                </div>
+                                <select
+                                  value={hasAssigned ? assigned : ""}
+                                  onChange={(e) =>
+                                    setSelectedLocations((prev) => ({ ...prev, [it.grnItemId]: e.target.value }))
+                                  }
+                                  className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-xs outline-none sm:w-72"
+                                >
+                                  <option value="">Select storage location…</option>
+                                  {storageLocations.map((l) => (
+                                    <option key={l.id} value={l.id}>
+                                      {l.code} · {l.name}
+                                      {l.warehouse?.name ? ` (${l.warehouse.name})` : ""}
+                                      {l.description ? ` — ${l.description}` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })}
+                          {!storageReady && (
+                            <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+                              Select a storage location for {missingLocationItems.length} accepted material
+                              {missingLocationItems.length === 1 ? "" : "s"} before completing.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <textarea
                       value={completeRemarks}
                       onChange={(e) => setCompleteRemarks(e.target.value)}
@@ -1185,14 +1311,14 @@ function InspectionDetailModal({
                   </div>
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => { setShowComplete(false); setCompleteRemarks(""); setCompleteAction(""); }}
+                      onClick={() => { setShowComplete(false); setCompleteRemarks(""); setCompleteAction(""); setSelectedLocations({}); }}
                       className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => void handleComplete()}
-                      disabled={actionBusy === "complete"}
+                      disabled={actionBusy === "complete" || !storageReady}
                       className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
                     >
                       {actionBusy === "complete" ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}

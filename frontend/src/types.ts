@@ -213,6 +213,8 @@ export interface InspectionItemDetail {
   testRequired: boolean;
   testResult?: string;
   remarks?: string;
+  storageLocationId?: string | null;
+  storageLocation?: { id: string; code: string; name: string } | null;
 }
 
 export interface QCInspection {

@@ -157,6 +157,20 @@ export const completeInspectionSchema = z.object({
   correctiveAction: z
     .string()
     .optional(),
+
+  storageLocations: z
+    .array(
+      z.object({
+        grnItemId: z
+          .string()
+          .uuid("Invalid GRN item ID"),
+
+        storageLocationId: z
+          .string()
+          .uuid("Invalid storage location ID"),
+      })
+    )
+    .optional(),
 });
 
 

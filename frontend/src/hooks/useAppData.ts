@@ -92,7 +92,13 @@ export interface AppDataContext {
       remarks?: string;
     }[];
   }) => Promise<boolean>;
-  completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED", note?: string, correctiveAction?: string) => Promise<boolean>;
+  completeInspection: (
+    id: string,
+    result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
+    note?: string,
+    correctiveAction?: string,
+    storageLocations?: { grnItemId: string; storageLocationId: string }[]
+  ) => Promise<boolean>;
   createInspection: (payload: {
     grnId: string;
     inspectionDate?: string;
@@ -526,13 +532,15 @@ export function useAppData(): AppDataContext {
     id: string,
     result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
     note?: string,
-    correctiveAction?: string
+    correctiveAction?: string,
+    storageLocations?: { grnItemId: string; storageLocationId: string }[]
   ): Promise<boolean> => {
     try {
       await inspectionService.completeInspection(id, {
         decision: result,
         remarks: note,
         correctiveAction,
+        storageLocations,
       });
       toast.success(`Inspection completed as ${result}!`);
       await refreshAll();

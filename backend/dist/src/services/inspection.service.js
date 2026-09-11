@@ -278,7 +278,7 @@ async function getInspectionById(id) {
                             storageLocation: true,
                         },
                     },
-                    Material: true,
+                    material: true,
                 },
             },
         },
@@ -581,7 +581,48 @@ async function completeInspection(inspectionId, userId, data) {
                 totalRejected.add(rejected);
         }
         // ==================================================
-        // 7. DETERMINE INSPECTION DECISION
+        // 7. ASSIGN STORAGE LOCATIONS
+        // ==================================================
+        if (data?.storageLocations?.length) {
+            // Only GRN items of THIS inspection can be assigned
+            const grnItemIds = new Set(inspection.items.map((i) => i.grnItemId));
+            for (const loc of data.storageLocations) {
+                if (!grnItemIds.has(loc.grnItemId)) {
+                    throw new Error(`GRN item ${loc.grnItemId} does not belong to this inspection`);
+                }
+                const storageLocation = await tx.storageLocation.findFirst({
+                    where: {
+                        id: loc.storageLocationId,
+                        isActive: true,
+                    },
+                    include: {
+                        warehouse: true,
+                    },
+                });
+                if (!storageLocation) {
+                    throw new Error(`Storage location ${loc.storageLocationId} not found or inactive`);
+                }
+                await tx.grnItem.update({
+                    where: {
+                        id: loc.grnItemId,
+                    },
+                    data: {
+                        storageLocationId: loc.storageLocationId,
+                    },
+                });
+                // Update the in-memory copy so the inventory
+                // posting loop below picks up the assignment
+                const grnItem = inspection.items.find((i) => i.grnItemId === loc.grnItemId)?.grnItem;
+                if (grnItem) {
+                    grnItem.storageLocationId =
+                        loc.storageLocationId;
+                    grnItem.storageLocation =
+                        storageLocation;
+                }
+            }
+        }
+        // ==================================================
+        // 8. DETERMINE INSPECTION DECISION
         // ==================================================
         let decision;
         const hasAccepted = totalAccepted.gt(0);
@@ -610,7 +651,7 @@ async function completeInspection(inspectionId, userId, data) {
             decision = "REJECTED";
         }
         // ==================================================
-        // 8. CREATE QUARANTINE RECORDS
+        // 9. CREATE QUARANTINE RECORDS
         // ==================================================
         for (const item of inspection.items) {
             const quarantineQuantity = new client_1.Prisma.Decimal(item.quantityQuarantined ?? 0);
@@ -638,7 +679,7 @@ async function completeInspection(inspectionId, userId, data) {
             });
         }
         // ==================================================
-        // 9. POST ACCEPTED MATERIAL INTO INVENTORY
+        // 10. POST ACCEPTED MATERIAL INTO INVENTORY
         // ==================================================
         for (const item of inspection.items) {
             const acceptedQuantity = new client_1.Prisma.Decimal(item.quantityAccepted ?? 0);
@@ -697,7 +738,7 @@ async function completeInspection(inspectionId, userId, data) {
             });
         }
         // ==================================================
-        // 10. UPDATE INSPECTION
+        // 11. UPDATE INSPECTION
         // ==================================================
         const updatedInspection = await tx.materialInspection.update({
             where: {
@@ -738,7 +779,7 @@ async function completeInspection(inspectionId, userId, data) {
             },
         });
         // ==================================================
-        // 11. UPDATE GRN STATUS
+        // 12. UPDATE GRN STATUS
         // ==================================================
         let grnStatus;
         if (decision === "ACCEPTED") {

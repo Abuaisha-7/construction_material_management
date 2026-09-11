@@ -158,6 +158,10 @@ export const inspectionService = {
     decision: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED";
     remarks?: string;
     correctiveAction?: string;
+    storageLocations?: {
+      grnItemId: string;
+      storageLocationId: string;
+    }[];
   }) {
     const res = await api.post<ApiResponse<BackendInspection>>(`/api/inspections/${id}/complete`, payload);
     return res.data;
