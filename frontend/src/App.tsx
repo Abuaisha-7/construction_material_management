@@ -56,6 +56,8 @@ function App() {
     rejectGrn,
     createGrn,
     completeInspection,
+    createInspection,
+    startInspection,
   } = useAppData();
 
   useEffect(() => {
@@ -314,6 +316,8 @@ function App() {
                   onRejectGrnBackend={rejectGrn}
                   onCreateGrnBackend={createGrn}
                   onCompleteInspectionBackend={completeInspection}
+                  onCreateInspectionBackend={createInspection}
+                  onStartInspectionBackend={startInspection}
                 />
               )}
               {tab === "inventory" && (

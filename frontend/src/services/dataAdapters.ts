@@ -247,17 +247,16 @@ export function adaptGrn(g: BackendGrn): GRN {
 
 export function adaptInspection(ins: BackendInspection): QCInspection {
   const statusMap: Record<string, QCInspection["status"]> = {
-    DRAFT: "Pending Inspection",
-    IN_PROGRESS: "Pending Inspection",
+    PENDING: "Pending Inspection",
+    IN_PROGRESS: "In Progress",
     COMPLETED:
-      ins.overallResult === "ACCEPTED"
+      ins.decision === "ACCEPTED"
         ? "Approved for Use"
-        : ins.overallResult === "QUARANTINED"
+        : ins.decision === "QUARANTINED"
         ? "Quarantined"
-        : ins.overallResult === "CONDITIONALLY_ACCEPTED"
+        : ins.decision === "CONDITIONALLY_ACCEPTED"
         ? "Approved for Use"
         : "Rejected",
-    CANCELLED: "Rejected",
   };
 
   const firstItem = ins.items?.[0];
@@ -269,20 +268,49 @@ export function adaptInspection(ins: BackendInspection): QCInspection {
     pass: Number(item.quantityRejected || 0) === 0,
   }));
 
+  const inspectionItems = (ins.items || []).map((item) => ({
+    id: item.id,
+    grnItemId: item.grnItemId,
+    materialId: item.materialId || item.grnItem?.materialId || undefined,
+    materialName: item.material?.name || item.grnItem?.material?.name || undefined,
+    materialCode: item.material?.materialCode || item.grnItem?.material?.materialCode || undefined,
+    unit: item.grnItem?.unit?.symbol || item.grnItem?.unit?.code || item.grnItem?.unit?.name,
+    deliveredQuantity: item.grnItem?.deliveredQuantity != null ? Number(item.grnItem.deliveredQuantity) : undefined,
+    quantityInspected:
+      item.quantityInspected != null ? Number(item.quantityInspected) : undefined,
+    quantityAccepted: Number(item.quantityAccepted || 0),
+    quantityConditionallyAccepted: Number(item.quantityConditionallyAccepted || 0),
+    quantityQuarantined: Number(item.quantityQuarantined || 0),
+    quantityRejected: Number(item.quantityRejected || 0),
+    specification: item.specification ?? undefined,
+    requiredStandard: item.requiredStandard ?? undefined,
+    certificateNumber: item.certificateNumber ?? undefined,
+    testRequired: item.testRequired,
+    testResult: item.testResult ?? undefined,
+    remarks: item.remarks ?? undefined,
+  }));
+
   return {
     id: ins.id,
     ref: ins.inspectionNumber,
     grnRef: ins.grn?.grnNumber || "GRN-REF",
-    materialId: firstItem?.materialId || "",
-    materialName: firstItem?.material?.name || "Inspected Material",
-    batch: firstItem?.certificateNumber || "BATCH-01",
+    grnId: ins.grnId,
+    materialId: firstItem?.materialId || firstItem?.grnItem?.materialId || "",
+    materialName: firstItem?.material?.name || firstItem?.grnItem?.material?.name || "Inspected Material",
+    batch: firstItem?.certificateNumber || firstItem?.grnItem?.batchNumber || "BATCH-01",
     testDate: ins.inspectionDate ? ins.inspectionDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
     tests: tests.length > 0 ? tests : [
       { id: "t1", name: "Specification Compliance", value: "Verified", standard: "ASTM / ES", pass: true },
     ],
     status: statusMap[ins.status] || "Pending Inspection",
     inspector: ins.inspector?.fullName || "QC Inspector",
-    note: ins.remarks || ins.correctiveAction || "QC evaluation completed.",
+    inspectorId: ins.inspectorId,
+    note: ins.remarks || ins.correctiveAction || "",
+    decision: ins.decision ?? null,
+    correctiveAction: ins.correctiveAction ?? undefined,
+    supplier: ins.grn?.supplier?.companyName,
+    poRef: ins.grn?.purchaseOrder?.purchaseOrderNumber,
+    inspectionItems: inspectionItems.length > 0 ? inspectionItems : undefined,
   };
 }
 

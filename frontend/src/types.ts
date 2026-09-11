@@ -191,18 +191,49 @@ export interface GRN {
   poItems?: { materialId: string; orderedQuantity: number; unitPrice: number }[];
 }
 
+export type InspectionStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED";
+export type InspectionDecision = "ACCEPTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "REJECTED" | "QUARANTINED";
+
+export interface InspectionItemDetail {
+  id: string;
+  grnItemId: string;
+  materialId?: string;
+  materialName?: string;
+  materialCode?: string;
+  unit?: string;
+  deliveredQuantity?: number;
+  quantityInspected?: number;
+  quantityAccepted: number;
+  quantityConditionallyAccepted: number;
+  quantityQuarantined: number;
+  quantityRejected: number;
+  specification?: string;
+  requiredStandard?: string;
+  certificateNumber?: string;
+  testRequired: boolean;
+  testResult?: string;
+  remarks?: string;
+}
+
 export interface QCInspection {
   id: string;
   ref: string;
   grnRef: string;
+  grnId?: string;
   materialId: string;
   materialName: string;
   batch: string;
   testDate: string;
   tests: { id: string; name: string; value: string; standard: string; pass: boolean }[];
-  status: "Pending Inspection" | "Approved for Use" | "Quarantined" | "Rejected";
+  status: "Pending Inspection" | "In Progress" | "Approved for Use" | "Quarantined" | "Rejected";
   inspector: string;
+  inspectorId?: string;
   note: string;
+  decision?: InspectionDecision | null;
+  correctiveAction?: string;
+  supplier?: string;
+  poRef?: string;
+  inspectionItems?: InspectionItemDetail[];
 }
 
 export interface InventoryItem {

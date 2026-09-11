@@ -1,11 +1,11 @@
 import { api, type ApiResponse } from "./api";
-import type { BackendMaterial } from "./material.service";
+import type { BackendMaterial, BackendUnit } from "./material.service";
 
 export interface BackendInspectionItem {
   id: string;
   inspectionId: string;
   grnItemId: string;
-  quantityInspected?: string | number;
+  quantityInspected?: string | number | null;
   quantityAccepted: string | number;
   quantityConditionallyAccepted?: string | number;
   quantityQuarantined?: string | number;
@@ -18,6 +18,25 @@ export interface BackendInspectionItem {
   remarks?: string | null;
   materialId?: string | null;
   material?: BackendMaterial;
+  grnItem?: {
+    id: string;
+    materialId: string;
+    deliveredQuantity: string | number;
+    damagedQuantity: string | number;
+    rejectedQuantity: string | number;
+    acceptedQuantity: string | number;
+    unitId: string;
+    batchNumber?: string | null;
+    storageLocationId?: string | null;
+    remarks?: string | null;
+    material?: BackendMaterial;
+    unit?: BackendUnit;
+    storageLocation?: {
+      id: string;
+      code: string;
+      name: string;
+    } | null;
+  };
 }
 
 export interface BackendInspection {
@@ -26,8 +45,8 @@ export interface BackendInspection {
   grnId: string;
   inspectorId: string;
   inspectionDate: string;
-  status: "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-  overallResult?: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "QUARANTINED" | null;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  decision?: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED" | null;
   remarks?: string | null;
   correctiveAction?: string | null;
   createdAt: string;
@@ -35,6 +54,32 @@ export interface BackendInspection {
     id: string;
     grnNumber: string;
     projectId?: string;
+    supplierId?: string;
+    deliveryDate?: string;
+    status?: string;
+    supplier?: {
+      id: string;
+      companyName: string;
+      contactPerson?: string | null;
+      phone?: string | null;
+    };
+    project?: {
+      id: string;
+      projectCode: string;
+      name: string;
+    };
+    purchaseOrder?: {
+      id: string;
+      purchaseOrderNumber: string;
+    };
+    items?: {
+      id: string;
+      materialId: string;
+      deliveredQuantity: string | number;
+      unitId: string;
+      material?: BackendMaterial;
+      unit?: BackendUnit;
+    }[];
   };
   inspector?: {
     id: string;
@@ -48,12 +93,14 @@ export const inspectionService = {
   async getInspections(params?: {
     grnId?: string;
     status?: string;
+    decision?: string;
     page?: number;
     limit?: number;
   }) {
     const query = new URLSearchParams();
     if (params?.grnId) query.set("grnId", params.grnId);
     if (params?.status) query.set("status", params.status);
+    if (params?.decision) query.set("decision", params.decision);
     if (params?.page) query.set("page", String(params.page));
     if (params?.limit) query.set("limit", String(params.limit));
 
@@ -78,15 +125,27 @@ export const inspectionService = {
       materialId?: string;
       quantityInspected?: number;
       quantityAccepted?: number;
+      quantityConditionallyAccepted?: number;
       quantityQuarantined?: number;
       quantityRejected?: number;
       specification?: string;
       requiredStandard?: string;
+      certificateNumber?: string;
+      testRequired?: boolean;
       testResult?: string;
       remarks?: string;
     }[];
   }) {
     const res = await api.post<ApiResponse<BackendInspection>>("/api/inspections", payload);
+    return res.data;
+  },
+
+  async updateInspection(id: string, payload: {
+    inspectionDate?: string;
+    remarks?: string;
+    correctiveAction?: string;
+  }) {
+    const res = await api.patch<ApiResponse<BackendInspection>>(`/api/inspections/${id}`, payload);
     return res.data;
   },
 
@@ -96,7 +155,7 @@ export const inspectionService = {
   },
 
   async completeInspection(id: string, payload: {
-    overallResult: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "QUARANTINED";
+    decision: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED";
     remarks?: string;
     correctiveAction?: string;
   }) {

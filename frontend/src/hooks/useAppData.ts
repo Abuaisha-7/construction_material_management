@@ -92,7 +92,29 @@ export interface AppDataContext {
       remarks?: string;
     }[];
   }) => Promise<boolean>;
-  completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "QUARANTINED", note?: string) => Promise<boolean>;
+  completeInspection: (id: string, result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED", note?: string, correctiveAction?: string) => Promise<boolean>;
+  createInspection: (payload: {
+    grnId: string;
+    inspectionDate?: string;
+    remarks?: string;
+    correctiveAction?: string;
+    items: {
+      grnItemId: string;
+      materialId?: string;
+      quantityInspected?: number;
+      quantityAccepted?: number;
+      quantityConditionallyAccepted?: number;
+      quantityQuarantined?: number;
+      quantityRejected?: number;
+      specification?: string;
+      requiredStandard?: string;
+      certificateNumber?: string;
+      testRequired?: boolean;
+      testResult?: string;
+      remarks?: string;
+    }[];
+  }) => Promise<boolean>;
+  startInspection: (id: string) => Promise<boolean>;
 }
 
 export function useAppData(): AppDataContext {
@@ -176,9 +198,7 @@ export function useAppData(): AppDataContext {
         const adaptedInspections =
           inspRes.status === "fulfilled" && inspRes.value?.length > 0
             ? inspRes.value.map(adaptInspection)
-            : prev.inspections.length > 0
-            ? prev.inspections
-            : baseline.inspections;
+            : [];
 
         const adaptedInventory =
           invRes.status === "fulfilled" && invRes.value?.length > 0
@@ -504,13 +524,15 @@ export function useAppData(): AppDataContext {
 
   const completeInspection = async (
     id: string,
-    result: "ACCEPTED" | "REJECTED" | "QUARANTINED",
-    note?: string
+    result: "ACCEPTED" | "REJECTED" | "CONDITIONALLY_ACCEPTED" | "PARTIALLY_ACCEPTED" | "QUARANTINED",
+    note?: string,
+    correctiveAction?: string
   ): Promise<boolean> => {
     try {
       await inspectionService.completeInspection(id, {
-        overallResult: result,
+        decision: result,
         remarks: note,
+        correctiveAction,
       });
       toast.success(`Inspection completed as ${result}!`);
       await refreshAll();
@@ -518,6 +540,52 @@ export function useAppData(): AppDataContext {
     } catch (err: any) {
       console.error("Failed to complete inspection:", err);
       toast.error(err.message || "Failed to complete inspection");
+      return false;
+    }
+  };
+
+  const createInspection = async (payload: {
+    grnId: string;
+    inspectionDate?: string;
+    remarks?: string;
+    correctiveAction?: string;
+    items: {
+      grnItemId: string;
+      materialId?: string;
+      quantityInspected?: number;
+      quantityAccepted?: number;
+      quantityConditionallyAccepted?: number;
+      quantityQuarantined?: number;
+      quantityRejected?: number;
+      specification?: string;
+      requiredStandard?: string;
+      certificateNumber?: string;
+      testRequired?: boolean;
+      testResult?: string;
+      remarks?: string;
+    }[];
+  }): Promise<boolean> => {
+    try {
+      await inspectionService.createInspection(payload);
+      toast.success("Inspection created on backend!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to create inspection:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to create inspection on backend");
+      return false;
+    }
+  };
+
+  const startInspection = async (id: string): Promise<boolean> => {
+    try {
+      await inspectionService.startInspection(id);
+      toast.success("Inspection started!");
+      await refreshAll();
+      return true;
+    } catch (err: unknown) {
+      console.error("Failed to start inspection:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to start inspection");
       return false;
     }
   };
@@ -548,5 +616,7 @@ export function useAppData(): AppDataContext {
     rejectGrn,
     createGrn,
     completeInspection,
+    createInspection,
+    startInspection,
   };
 }
